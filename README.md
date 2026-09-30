@@ -167,7 +167,7 @@ Other rules:
 ## 5. Project Structure
 
 ```text
-ps26122/
+SIH_PS26122_Binary.Blades/
 ├── data/
 │   ├── schedule.json           # 81 planned L6 activities (source of truth for the plan)
 │   ├── examples.txt            # sample contractor statements
@@ -210,8 +210,8 @@ ps26122/
 ### Installation
 
 ```bash
-git clone <your-repo-url>
-cd ps26122
+git clone https://github.com/Faizankhan113/SIH_PS26122_Binary.Blades.git
+cd SIH_PS26122_Binary.Blades
 
 python -m venv .venv
 # Windows: .venv\Scripts\activate      macOS/Linux: source .venv/bin/activate
