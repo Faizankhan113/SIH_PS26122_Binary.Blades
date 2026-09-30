@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">STEP 02 · EXTRACTION</div><h1>What did the field report actually say?</h1><p>These are the normalized facts extracted from the source. Original evidence is kept so the result remains auditable.</p></div><div class="source-chip">{{ source }} · {{ report_date }}</div></div>
+
+<div class="summary-strip">
+  <div><span>Statements</span><strong>{{ progress.total }}</strong></div>
+  <div><span>Structured events</span><strong>{{ progress.done }}</strong></div>
+  <div><span>Evidence retained</span><strong>100%</strong></div>
+  <div><span>Next stage</span><strong>Semantic match</strong></div>
+</div>
+
+{% if progress.failed %}
+<div class="alert error" role="alert">
+  {{ progress.failed }} of {{ progress.total }} statement{{ 's' if progress.total != 1 else '' }} could not be read and will not be matched.
+  <button id="retryExtract" class="secondary" type="button">Retry failed</button>
+</div>
+{% endif %}
+
+{% if progress.needs_correction %}
+<div class="alert error" role="alert">
+  {{ progress.needs_correction }} statement{{ 's' if progress.needs_correction != 1 else '' }} contain{{ 's' if progress.needs_correction == 1 else '' }} a problem that must be corrected. {{ 'It' if progress.needs_correction == 1 else 'They' }} will not be matched and no guess was made.
+</div>
+{% endif %}
+{% if progress.degraded %}
+<div class="alert error" role="alert">
+  <span class="degraded-badge">Degraded extraction</span>
+  {{ progress.degraded }} statement{{ 's were' if progress.degraded != 1 else ' was' }} read by keyword rules because the AI reader was unavailable.
+  {{ 'Its' if progress.degraded == 1 else 'Their' }} fields are guesses: {{ 'it' if progress.degraded == 1 else 'they' }} can never be auto-accepted and a supervisor must approve before the plan changes.
+</div>
+{% endif %}
+
+<div class="stack">
+{% for item in items %}
+{% if item.state == 'done' and item.result and item.result.needs_correction %}
+<div class="card event-card">
+  <div class="event-head"><div><span class="index-badge">{{ loop.index }}</span><b>Needs correction</b></div><span class="status status-error">NEEDS CORRECTION</span></div>
+  <div class="evidence"><span>Original text</span>“{{ item.result.raw_text or item.statement }}”</div>
+  <div class="evidence" style="border-color:var(--bad);color:var(--bad)"><span>Reason</span>{{ item.result.validation_error }}</div>
+  <div class="evidence"><span>What to do</span>Correct the statement and submit it again from the ingestion screen. It is not matched and nothing was written.</div>
+</div>
+{% elif item.state == 'failed' %}
+<div class="card event-card">
+  <div class="event-head"><div><span class="index-badge">{{ loop.index }}</span><b>Could not be read</b></div><span class="status status-error">FAILED</span></div>
+  <div class="evidence"><span>Original text</span>“{{ item.statement }}”</div>
+  <div class="evidence" style="border-color:var(--bad);color:var(--bad)"><span>Reason</span>{{ item.error or 'Unknown error' }}</div>
+</div>
+{% else %}
+{% set r = item.result %}
+<div class="card event-card">
+  <div class="event-head"><div><span class="index-badge">{{ loop.index }}</span><b>{{ r.activity_description }}</b>{% if r.asset %}<span class="tag">{{ r.asset }}</span>{% endif %}{% if r.extraction_degraded %}<span class="degraded-badge">Degraded extraction</span>{% endif %}</div><span class="status status-{{ r.status|lower|replace('_','-') }}">{{ r.status }}</span></div>
+  <div class="event-grid">
+    <div><label>Activity</label><strong>{{ r.activity_description }}</strong></div>
+    <div><label>Asset</label><strong>{{ r.asset or '—' }}</strong></div>
+    <div><label>Discipline</label><strong>{{ r.discipline or '—' }}</strong></div>
+    <div><label>Location</label><strong>{{ r.location or '—' }}</strong></div>
+    <div><label>Progress</label><strong>{{ (r.progress_percent|string + '%') if r.progress_percent is not none else '—' }}</strong></div>
+    <div><label>Actual start</label><strong>{{ r.actual_start|fmt_actual(r.actual_start_time_stated) or '—' }}</strong></div>
+    <div><label>Actual finish</label><strong>{{ r.actual_finish|fmt_actual(r.actual_finish_time_stated) or '—' }}</strong></div>
+    {% set hrs = actual_hours(r.actual_start, r.actual_start_time_stated, r.actual_finish, r.actual_finish_time_stated) %}{% if hrs is not none %}<div><label>Actual duration</label><strong>{{ hrs }} h</strong></div>{% endif %}
+    <div><label>Contractor</label><strong>{{ r.contractor or '—' }}</strong></div>
+    <div><label>Delay reason</label><strong>{{ r.delay_reason_reported or '—' }}</strong></div>
+    {% if r.activity_ref %}<div><label>Activity ref</label><strong>{{ r.activity_ref }}</strong></div>{% endif %}
+  </div>
+  {% if r.evidence_quote %}<div class="evidence"><span>Evidence</span>“{{ r.evidence_quote }}”</div>{% endif %}
+  {% if r.extraction_degraded %}<div class="evidence" style="border-color:var(--bad);color:var(--bad)"><span>Extraction error</span>LLM extraction failed{% if r.extraction_error %} ({{ r.extraction_error }}){% endif %}. These fields are keyword guesses, not verified extraction. This event will be sent for review and will not change the plan until a supervisor approves it.</div>{% endif %}
+</div>
+{% endif %}
+{% endfor %}
+</div>
+
+<div class="action-row sticky-action"><a class="secondary" href="{{ url_for('ingest') }}">← Back to Ingestion</a><button id="toMatch" class="primary"{% if not progress.done %} disabled{% endif %}>Continue to Matching <span>→</span></button></div>
+<div id="matchError" class="alert error hidden"></div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="login-layout">
+  <div class="page-head login-page-head"><div><div class="eyebrow">SIGN IN</div><h1>Log in to continue.</h1><p>Contractors submit field-progress reports here. Supervisors review matches flagged for approval.</p></div></div>
+
+  <div class="card stack login-card" style="max-width:420px;padding:26px">
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" class="stack">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required autofocus>
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required>
+    </div>
+    <div class="action-row"><button class="primary" type="submit">Log in</button></div>
+  </form>
+    <small class="muted">New contractor? <a href="{{ url_for('signup') }}">Sign up</a> — your account needs supervisor approval before you can log in.</small>
+  </div>
+</main>
+{% endblock %}

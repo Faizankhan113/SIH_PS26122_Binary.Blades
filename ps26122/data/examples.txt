@@ -1,0 +1,20 @@
+# Example 1 - easy
+24-inch CS spool erection on Line 24 completed on 30 Aug by ABC Piping.
+
+# Example 2 - synonym
+Piping erection for Line 25 was finished today by XYZ Contractors.
+
+# Example 3 - different wording
+Valve 24-A installation started on 30 August in Area B.
+
+# Example 4 - progress
+Line 24 spool work is approximately 60 percent complete.
+
+# Example 5 - delay reason
+Line 25 erection is delayed because the required material arrived late.
+
+# Example 6 - potentially ambiguous
+Piping work near Line 24 completed today.
+
+# Example 7 - unmatched/new work
+Additional temporary support structure installed in Area B.

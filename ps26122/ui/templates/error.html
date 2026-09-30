@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">ACCESS DENIED</div><h1>{{ message or "Something went wrong." }}</h1><p>If you think this is a mistake, check that you're logged in with the right account.</p></div></div>
+<div class="action-row" style="justify-content:flex-start">
+  {% if current_user %}<a class="secondary" href="{{ url_for('index') }}">Back home</a>{% else %}<a class="secondary" href="{{ url_for('login') }}">Log in</a>{% endif %}
+</div>
+{% endblock %}

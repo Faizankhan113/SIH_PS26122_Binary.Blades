@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">CONTRACTOR SIGN-UP</div><h1>Create a contractor account.</h1><p>Self-signup is open to contractors. A supervisor needs to approve your account before you can log in and start submitting reports.</p></div></div>
+
+<div class="card stack" style="max-width:460px;padding:26px">
+  {% if submitted %}
+  <div class="alert" style="background:var(--goodbg);color:var(--good)">
+    Account request submitted. A supervisor needs to approve it before you can log in — check back shortly.
+  </div>
+  <div class="action-row" style="justify-content:flex-start"><a class="secondary" href="{{ url_for('login') }}">Back to login</a></div>
+  {% else %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" class="stack">
+    <div>
+      <label for="name">Full name</label>
+      <input id="name" name="name" type="text" placeholder="e.g. Rahul Sharma" required autofocus>
+    </div>
+    <div>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required>
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" minlength="8" required>
+      <small class="muted">At least 8 characters.</small>
+    </div>
+    <div>
+      <label for="confirm">Confirm password</label>
+      <input id="confirm" name="confirm" type="password" minlength="8" required>
+    </div>
+    <div class="action-row" style="justify-content:flex-start"><button class="primary" type="submit">Request account</button></div>
+  </form>
+  <small class="muted">Already have an account? <a href="{{ url_for('login') }}">Log in</a>.</small>
+  {% endif %}
+</div>
+{% endblock %}

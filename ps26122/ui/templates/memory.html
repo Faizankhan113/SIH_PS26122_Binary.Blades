@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">INSTITUTIONAL MEMORY</div>
+    <h1>What actually happened, made queryable.</h1>
+    <p>Every approved field update leaves a permanent, structured trace. Over the life of a project this becomes a searchable record of real durations, recurring delay causes, and discipline-wise productivity — the knowledge that otherwise stays locked in supervisors' heads.</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert error">Institutional memory queries failed: {{ error }}</div>
+{% endif %}
+
+<div class="summary-strip">
+  <div><span>Historical updates</span><strong>{{ stats.total_updates or 0 }}</strong></div>
+  <div><span>Activities with history</span><strong>{{ stats.activities_with_history or 0 }} / {{ stats.total_activities or 0 }}</strong></div>
+  <div><span>Auto-accepted</span><strong>{{ stats.by_match_status.AUTO_ACCEPTED or 0 }}</strong></div>
+  <div><span>Avg match confidence</span><strong>{{ ((stats.avg_match_confidence or 0) * 100)|round|int }}%</strong></div>
+</div>
+
+{% if not stats.total_updates %}
+<div class="card" style="padding:22px;margin-bottom:18px">
+  <b>No historical data yet.</b>
+  <p class="muted" style="margin:6px 0 0">This view stays empty until execution history accumulates. For this demo, seed a synthetic history with:</p>
+  <code style="display:inline-block;margin-top:8px">python -m src.seed_history --reset</code>
+</div>
+{% endif %}
+
+<div class="card stack" style="padding:24px;margin-bottom:18px">
+  <h3 style="margin:0 0 4px">Discipline-wise productivity</h3>
+  <p class="muted" style="font-size:12px;margin:0 0 12px">Built from actual vs planned durations and finish-date variance across every historical update for that discipline.</p>
+  <table class="data-table">
+    <thead><tr><th>Discipline</th><th>Completed</th><th>Delayed</th><th>In progress</th><th>Avg finish variance</th><th>Avg actual duration</th><th>Avg planned duration</th><th>Productivity ratio</th><th>Avg timed duration</th></tr></thead>
+    <tbody>
+      {% for row in productivity %}
+      <tr>
+        <td><strong>{{ row.discipline }}</strong></td>
+        <td>{{ row.completed }}</td>
+        <td>{{ row.delayed }}</td>
+        <td>{{ row.in_progress }}</td>
+        <td>{% if row.avg_variance_days is none %}—{% elif row.avg_variance_days > 0 %}<span class="bad">{{ row.avg_variance_days }} day(s) late</span>{% elif row.avg_variance_days < 0 %}<span class="good">{{ -row.avg_variance_days }} day(s) early</span>{% else %}On plan{% endif %}</td>
+        <td>{{ row.avg_actual_duration_days if row.avg_actual_duration_days is not none else '—' }}{% if row.avg_actual_duration_days is not none %}d{% endif %}</td>
+        <td>{{ row.avg_planned_duration_days if row.avg_planned_duration_days is not none else '—' }}{% if row.avg_planned_duration_days is not none %}d{% endif %}</td>
+        <td>{% if row.avg_timed_duration_hours is none %}—{% else %}{{ row.avg_timed_duration_hours }} h<br><span class="muted" style="font-size:11px">{{ row.timed_updates }} timed update(s)</span>{% endif %}</td>
+        <td>{% if row.productivity_ratio is not none %}{{ row.productivity_ratio }}×{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card stack" style="padding:24px;margin-bottom:18px">
+  <h3 style="margin:0 0 4px">Recurring delay causes</h3>
+  <p class="muted" style="font-size:12px;margin:0 0 12px">Normalized delay categories extracted from free-text field reports — the "lessons learned" a future project could search before it repeats the same mistake.</p>
+  {% if delays %}
+  <table class="data-table">
+    <thead><tr><th>Delay category</th><th>Discipline</th><th>Occurrences</th></tr></thead>
+    <tbody>
+      {% for row in delays %}
+      <tr><td>{{ row.delay_reason_category }}</td><td>{{ row.discipline or '—' }}</td><td>{{ row.c }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No delay events recorded yet.</p>
+  {% endif %}
+</div>
+
+<div class="card stack" style="padding:24px">
+  <h3 style="margin:0 0 4px">Search execution history</h3>
+  <p class="muted" style="font-size:12px;margin:0 0 12px">Filter the raw historical record — every row here is a real approved update with full audit provenance (reporter, confidence, evidence).</p>
+
+  <form method="get" class="form-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div>
+      <label>Discipline</label>
+      <select name="discipline" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for d in filter_values.disciplines %}<option value="{{ d }}" {% if filters.discipline == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Delay category</label>
+      <select name="delay_category" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for c in filter_values.delay_categories %}<option value="{{ c }}" {% if filters.delay_category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Status</label>
+      <select name="status" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for s in filter_values.statuses %}<option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Asset contains</label>
+      <input type="text" name="asset" value="{{ filters.asset or '' }}" placeholder="e.g. Line 24" onchange="this.form.submit()">
+    </div>
+  </form>
+
+  <table class="data-table" style="margin-top:14px">
+    <thead><tr><th>Date</th><th>L6</th><th>Activity</th><th>Discipline</th><th>Status</th><th>Actual start → finish</th><th>Variance</th><th>Contractor</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for row in history %}
+      <tr>
+        <td>{{ row.report_date }}</td>
+        <td>{{ row.l6_id }}</td>
+        <td>{{ row.activity_description }}<br><span class="muted" style="font-size:11px">{{ row.asset }} · {{ row.location }}</span></td>
+        <td>{{ row.discipline }}</td>
+        <td><span class="status status-{{ (row.status or '')|lower|replace('_','-') }}">{{ row.status }}</span>{% if row.delay_reason_category %}<br><span class="muted" style="font-size:11px">{{ row.delay_reason_category }}</span>{% endif %}</td>
+        <td style="white-space:nowrap">{% if row.actual_start or row.actual_finish %}{{ row.actual_start|fmt_actual(row.actual_start_time_stated) or '—' }} → {{ row.actual_finish|fmt_actual(row.actual_finish_time_stated) or '—' }}{% if row.actual_duration_hours is not none %}<br><span class="muted" style="font-size:11px">{{ row.actual_duration_hours }} h</span>{% endif %}{% else %}—{% endif %}</td>
+        <td>{% if row.variance_days is none %}—{% elif row.variance_days > 0 %}<span class="bad">{{ row.variance_days }}d late</span>{% elif row.variance_days < 0 %}<span class="good">{{ -row.variance_days }}d early</span>{% else %}On plan{% endif %}</td>
+        <td>{{ row.contractor or '—' }}</td>
+        <td>{{ ((row.match_confidence or 0) * 100)|round|int }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="muted" style="text-align:center;padding:24px">No matching historical updates.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

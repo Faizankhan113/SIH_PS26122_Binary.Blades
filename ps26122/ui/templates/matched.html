@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .field-changed { background:#fff2dd !important; font-weight:800; }
+  .change-badge { display:inline-block; margin-right:8px; padding:2px 6px; border-radius:5px; background:#ed8b23; color:#fff; font-size:9px; font-weight:850; letter-spacing:.04em; text-transform:uppercase; vertical-align:middle; white-space:nowrap; }
+</style>
+
+<div class="page-head"><div><div class="eyebrow">STEP 03 · MATCHING & PLAN VS ACTUAL</div><h1>Connect field reality to the schedule.</h1><p>The key question is simple: which planned L6 activity does this field event belong to, and what does the database now hold after the save? Every record below is read from the database.</p></div><button id="resetBtn" class="secondary">Start new demo</button></div>
+
+<div class="summary-strip has-errors">
+  <div><span>Events</span><strong>{{ rows|length }}</strong></div>
+  <div><span>Auto accepted</span><strong>{{ rows|selectattr('match.review_status','equalto','AUTO_ACCEPTED')|list|length }}</strong></div>
+  <div><span>Needs review</span><strong>{{ rows|selectattr('match.review_status','equalto','REVIEW')|list|length }}</strong></div>
+  <div><span>Unmatched</span><strong>{{ rows|selectattr('match.review_status','equalto','UNMATCHED')|list|length }}</strong></div>
+  <div class="tile-error"><span>Errors</span><strong>{{ rows|selectattr('match.review_status','equalto','ERROR')|list|length }}</strong></div>
+</div>
+
+<div class="stack">
+{% for row in rows %}
+<div class="card match-card">
+  <div class="match-top">
+    <div><span class="status status-{{ row.match.review_status|lower|replace('_','-') }}">{{ row.match.review_status }}</span>{% if row.match.extraction_degraded %}<span class="degraded-badge">Degraded extraction</span>{% endif %}<h3>Field event → {{ row.match.matched_activity_id or 'No match' }}</h3></div>
+    {% if row.match.review_status == 'UNMATCHED' %}
+    <div class="confidence confidence-none"><strong>No match</strong></div>
+    {% elif row.match.review_status == 'ERROR' %}
+    <div class="confidence confidence-none"><strong>Error</strong><span>not matched</span></div>
+    {% else %}
+    <div class="confidence"><strong>{{ (row.match.confidence * 100)|round|int }}%</strong><span>confidence</span></div>
+    {% endif %}
+  </div>
+
+  {% if row.match.extraction_degraded %}
+  <div class="alert error" role="alert" style="margin-top:12px"><b>Degraded extraction.</b> The AI reader failed{% if row.match.extraction_error %} ({{ row.match.extraction_error }}){% endif %}, so the fields of this event are keyword guesses (status, dates and delay reason may be missing or wrong). It cannot be auto-accepted: a supervisor must review it, and the plan stays unchanged until then.</div>
+  {% endif %}
+
+  {% if row.match.review_status == 'ERROR' %}
+  <div class="alert error match-error" role="alert" style="margin-top:12px">
+    <div><b>Not matched: processing error.</b> {{ row.match.reason }} This is a failure of the system, not a finding about the report, so nothing was saved to the planner or the supervisor queue.</div>
+    <button type="button" class="secondary retry-match" data-event-id="{{ row.event.event_id }}">Retry</button>
+  </div>
+  {% endif %}
+
+  {% set oc = row.outcome %}
+  {% if oc == 'APPLIED' %}
+  <div class="alert outcome outcome-applied" role="status"><b>Saved and applied.</b> The plan now holds the values in the "after" record below (update {{ row.update_db.update_id }}).</div>
+  {% elif oc == 'PENDING' %}
+  <div class="alert outcome outcome-pending" role="status"><b>Saved, waiting for supervisor.</b> The plan has not changed; a supervisor must approve update {{ row.update_db.update_id }} first.</div>
+  {% elif oc == 'CONFLICT' %}
+  <div class="alert outcome outcome-pending" role="status"><b>Not applied automatically: sent to review.</b> {{ row.match.conflicts|join('; ') }}. The plan has not changed (update {{ row.update_db.update_id }}).</div>
+  {% elif oc == 'LOGGED' %}
+  <div class="alert outcome outcome-logged" role="status"><b>No match, logged for the planner.</b> Saved as update {{ row.update_db.update_id }}; the plan has not changed.</div>
+  {% elif oc == 'DUPLICATE' %}
+  <div class="alert outcome outcome-logged" role="status"><b>Already submitted earlier.</b> This statement matches update {{ row.update_db.update_id }} (status {{ row.update_db.match_status }}). Nothing was saved or applied again.</div>
+  {% elif oc == 'NOT_SAVED' %}
+  <div class="alert error" role="alert"><b>Not saved.</b> The database refused this update{% if row.save_error %} ({{ row.save_error }}){% endif %}. The plan has not changed.</div>
+  {% endif %}
+
+  <div class="match-explain">
+    <div><span class="explain-step">1</span><div><b>Field update</b><small>{{ row.event.activity_description }}{% if row.event.asset %} · {{ row.event.asset }}{% endif %}</small></div></div>
+    <div class="explain-arrow">→</div>
+    <div><span class="explain-step">2</span><div><b>Matched L6</b><small>{{ row.before_db.l6_id if row.before_db else 'No schedule activity' }}</small></div></div>
+    <div class="explain-arrow">→</div>
+    <div><span class="explain-step">3</span><div><b>Schedule-aware record</b><small>{% if row.outcome == 'APPLIED' %}Actual progress is written to the plan.{% elif row.outcome in ('PENDING','CONFLICT') %}Waiting for a supervisor.{% else %}Not written to the plan.{% endif %}</small></div></div>
+  </div>
+
+  {% if row.before_db %}
+  <div class="l6-compare">
+    <div class="compare-heading">
+      <div><span class="compare-kicker">DATABASE CHANGE</span><h3>L6 record before vs after this update</h3><p>Both sides use the exact same L6 fields. Empty values are shown as <strong>null</strong>.</p></div>
+      <div class="record-id">{{ row.before_db.l6_id }}</div>
+    </div>
+
+    <div class="compare-grid">
+      <section class="compare-panel before-panel">
+        <div class="panel-title"><span class="compare-kicker">BEFORE MATCHING</span><h4>Previous L6 entry</h4><span class="panel-note">Baseline/current state before this field update</span></div>
+        <table class="data-table compare-table">
+          <tbody>
+            <tr><th>L6 ID</th><td>{{ row.before_db.l6_id if row.before_db.l6_id is not none else 'null' }}</td></tr>
+            <tr><th>Project ID</th><td>{{ row.before_db.project_id if row.before_db.project_id is not none else 'null' }}</td></tr>
+            <tr><th>WBS Code</th><td>{{ row.before_db.wbs_code if row.before_db.wbs_code is not none else 'null' }}</td></tr>
+            <tr><th>Activity Code</th><td>{{ row.before_db.activity_code if row.before_db.activity_code is not none else 'null' }}</td></tr>
+            <tr><th>Description</th><td>{{ row.before_db.description if row.before_db.description is not none else 'null' }}</td></tr>
+            <tr><th>Discipline</th><td>{{ row.before_db.discipline if row.before_db.discipline is not none else 'null' }}</td></tr>
+            <tr><th>Asset</th><td>{{ row.before_db.asset if row.before_db.asset is not none else 'null' }}</td></tr>
+            <tr><th>Location</th><td>{{ row.before_db.location if row.before_db.location is not none else 'null' }}</td></tr>
+            <tr><th>Planned Start</th><td>{{ row.before_db.planned_start if row.before_db.planned_start is not none else 'null' }}</td></tr>
+            <tr><th>Planned Finish</th><td>{{ row.before_db.planned_finish if row.before_db.planned_finish is not none else 'null' }}</td></tr>
+            <tr><th>Planned Duration</th><td>{{ row.before_db.planned_duration if row.before_db.planned_duration is not none else 'null' }}</td></tr>
+            <tr><th>Actual Start</th><td>{{ (row.before_db.actual_start|fmt_actual(row.before_db.actual_start_time_stated)) if row.before_db.actual_start is not none else 'null' }}</td></tr>
+            <tr><th>Actual Finish</th><td>{{ (row.before_db.actual_finish|fmt_actual(row.before_db.actual_finish_time_stated)) if row.before_db.actual_finish is not none else 'null' }}</td></tr>
+            <tr><th>Progress</th><td>{{ row.before_db.progress_percent if row.before_db.progress_percent is not none else 'null' }}{% if row.before_db.progress_percent is not none %}%{% endif %}</td></tr>
+            <tr><th>Status</th><td>{{ row.before_db.status if row.before_db.status is not none else 'null' }}</td></tr>
+            <tr><th>Contractor</th><td>{{ row.before_db.contractor if row.before_db.contractor is not none else 'null' }}</td></tr>
+            <tr><th>Update Ref</th><td>{{ row.before_db.update_ref if row.before_db.update_ref is not none else 'null' }}</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="compare-middle">
+        <div class="change-arrow">→</div>
+        <div class="change-label">FIELD UPDATE<br>APPLIED</div>
+      </div>
+
+      <section class="compare-panel after-panel">
+        <div class="panel-title"><span class="compare-kicker new">AFTER MATCHING</span><h4>Updated L6 entry</h4><span class="panel-note">Same L6 record after the field update was applied</span></div>
+        <table class="data-table compare-table">
+          <tbody>
+            <tr><th>L6 ID</th><td>{{ row.after_db.l6_id if row.after_db.l6_id is not none else 'null' }}</td></tr>
+            <tr><th>Project ID</th><td>{{ row.after_db.project_id if row.after_db.project_id is not none else 'null' }}</td></tr>
+            <tr><th>WBS Code</th><td>{{ row.after_db.wbs_code if row.after_db.wbs_code is not none else 'null' }}</td></tr>
+            <tr><th>Activity Code</th><td class="{% if row.before_db.activity_code != row.after_db.activity_code %}field-changed{% endif %}">{% if row.before_db.activity_code != row.after_db.activity_code %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.activity_code if row.after_db.activity_code is not none else 'null' }}</td></tr>
+            <tr><th>Description</th><td class="{% if row.before_db.description != row.after_db.description %}field-changed{% endif %}">{% if row.before_db.description != row.after_db.description %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.description if row.after_db.description is not none else 'null' }}</td></tr>
+            <tr><th>Discipline</th><td class="{% if row.before_db.discipline != row.after_db.discipline %}field-changed{% endif %}">{% if row.before_db.discipline != row.after_db.discipline %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.discipline if row.after_db.discipline is not none else 'null' }}</td></tr>
+            <tr><th>Asset</th><td class="{% if row.before_db.asset != row.after_db.asset %}field-changed{% endif %}">{% if row.before_db.asset != row.after_db.asset %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.asset if row.after_db.asset is not none else 'null' }}</td></tr>
+            <tr><th>Location</th><td class="{% if row.before_db.location != row.after_db.location %}field-changed{% endif %}">{% if row.before_db.location != row.after_db.location %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.location if row.after_db.location is not none else 'null' }}</td></tr>
+            <tr><th>Planned Start</th><td class="{% if row.before_db.planned_start != row.after_db.planned_start %}field-changed{% endif %}">{% if row.before_db.planned_start != row.after_db.planned_start %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.planned_start if row.after_db.planned_start is not none else 'null' }}</td></tr>
+            <tr><th>Planned Finish</th><td class="{% if row.before_db.planned_finish != row.after_db.planned_finish %}field-changed{% endif %}">{% if row.before_db.planned_finish != row.after_db.planned_finish %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.planned_finish if row.after_db.planned_finish is not none else 'null' }}</td></tr>
+            <tr><th>Planned Duration</th><td class="{% if row.before_db.planned_duration != row.after_db.planned_duration %}field-changed{% endif %}">{% if row.before_db.planned_duration != row.after_db.planned_duration %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.planned_duration if row.after_db.planned_duration is not none else 'null' }}</td></tr>
+            <tr><th>Actual Start</th><td class="{% if row.before_db.actual_start != row.after_db.actual_start %}field-changed{% endif %}">{% if row.before_db.actual_start != row.after_db.actual_start %}<span class="change-badge">New</span>{% endif %} {{ (row.after_db.actual_start|fmt_actual(row.after_db.actual_start_time_stated)) if row.after_db.actual_start is not none else 'null' }}</td></tr>
+            <tr><th>Actual Finish</th><td class="{% if row.before_db.actual_finish != row.after_db.actual_finish %}field-changed{% endif %}">{% if row.before_db.actual_finish != row.after_db.actual_finish %}<span class="change-badge">New</span>{% endif %} {{ (row.after_db.actual_finish|fmt_actual(row.after_db.actual_finish_time_stated)) if row.after_db.actual_finish is not none else 'null' }}</td></tr>
+            <tr><th>Progress</th><td class="{% if row.before_db.progress_percent != row.after_db.progress_percent %}field-changed{% endif %}">{% if row.before_db.progress_percent != row.after_db.progress_percent %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.progress_percent if row.after_db.progress_percent is not none else 'null' }}{% if row.after_db.progress_percent is not none %}%{% endif %}</td></tr>
+            <tr><th>Status</th><td class="{% if row.before_db.status != row.after_db.status %}field-changed{% endif %}">{% if row.before_db.status != row.after_db.status %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.status if row.after_db.status is not none else 'null' }}</td></tr>
+            <tr><th>Contractor</th><td class="{% if row.before_db.contractor != row.after_db.contractor %}field-changed{% endif %}">{% if row.before_db.contractor != row.after_db.contractor %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.contractor if row.after_db.contractor is not none else 'null' }}</td></tr>
+            <tr><th>Update Ref</th><td class="{% if row.before_db.update_ref != row.after_db.update_ref %}field-changed{% endif %}">{% if row.before_db.update_ref != row.after_db.update_ref %}<span class="change-badge">New</span>{% endif %} {{ row.after_db.update_ref if row.after_db.update_ref is not none else 'null' }}</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-match"><b>No L6 activity linked.</b><p>{% if row.outcome == 'LOGGED' %}It was logged (update {{ row.update_db.update_id }}) and stays outside the schedule until a planner reviews or maps it.{% else %}The event remains outside the schedule until a planner reviews or maps it.{% endif %}</p></div>
+  {% endif %}
+
+  {% if row.update_db %}
+  <div class="audit-card">
+    <div class="compare-kicker new">UPDATE AUDIT</div>
+    <div class="audit-grid">
+      <div><label>Update ID</label><strong>{{ row.update_db.update_id }}</strong></div>
+      <div><label>Reported by</label><strong>{{ row.update_db.reported_by }}</strong></div>
+      <div><label>Approved by</label><strong>{{ row.update_db.approved_by or ('Pending review' if row.update_db.match_status == 'REVIEW' else '—') }}</strong></div>
+      <div><label>Match status</label><strong>{{ row.update_db.match_status }}</strong></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="reason"><b>Why this match?</b> {{ row.match.reason }}<br><span class="muted" style="font-size:11px">Match method: {{ row.match.match_method }}</span></div>
+
+  {% if row.match.candidates %}
+  <div class="audit-card">
+    <div class="compare-kicker">RETRIEVAL + RERANK AUDIT TRAIL</div>
+    <p class="muted" style="font-size:12px;margin:6px 0 12px">Hybrid retrieval (TF-IDF + spaCy semantic similarity + fuzzy match + discipline/asset/location rules) shortlisted these candidates before the LLM reranked them.</p>
+    <table class="data-table">
+      <thead><tr><th style="width:auto">Rank</th><th>Activity</th><th>Description</th><th>Retrieval score</th><th>Notes</th></tr></thead>
+      <tbody>
+        {% for c in row.match.candidates %}
+        <tr class="{% if c.activity_id == row.match.matched_activity_id %}field-changed{% endif %}">
+          <td>{{ loop.index }}{% if c.activity_id == row.match.matched_activity_id %} <span class="change-badge">CHOSEN</span>{% endif %}</td>
+          <td><strong>{{ c.activity_id }}</strong></td>
+          <td>{{ c.description }}<br><span class="muted" style="font-size:11px">{{ c.discipline }} · {{ c.asset }} · {{ c.location }}</span></td>
+          <td>{{ (c.retrieval_score * 100)|round|int }}%<br><span class="muted" style="font-size:10px">lex {{ (c.retrieval_breakdown.lexical*100)|round|int }} · sem {{ (c.retrieval_breakdown.semantic*100)|round|int }} · fuzzy {{ (c.retrieval_breakdown.fuzzy*100)|round|int }}</span></td>
+          <td style="font-size:11px">{{ c.retrieval_breakdown.notes|join(', ') if c.retrieval_breakdown.notes else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if row.before_db %}
+  <div class="plan-actual">
+    <div><label>Planned activity</label><strong>{{ row.before_db.l6_id }} · {{ row.before_db.description }}</strong></div>
+    <div><label>Plan finish</label><strong>{{ row.before_db.planned_finish or "—" }}</strong></div>
+    <div><label>Actual finish</label><strong>{{ (row.after_db.actual_finish|fmt_actual(row.after_db.actual_finish_time_stated)) or 'In progress' }}</strong></div>
+    {% set hrs = actual_hours(row.after_db.actual_start, row.after_db.actual_start_time_stated, row.after_db.actual_finish, row.after_db.actual_finish_time_stated) %}{% if hrs is not none %}<div><label>Actual duration</label><strong>{{ hrs }} h</strong></div>{% endif %}
+    <div><label>Variance</label><strong class="{% if row.variance_days is not none and row.variance_days > 0 %}bad{% elif row.variance_days is not none %}good{% endif %}">{% if row.variance_days is none %}—{% elif row.variance_days > 0 %}{{ row.variance_days }} day(s) late{% elif row.variance_days < 0 %}{{ (-row.variance_days) }} day(s) early{% else %}On plan{% endif %}</strong></div>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+<div class="action-row"><a class="secondary" href="{{ url_for('extracted') }}">← Back to Extraction</a></div>
+
+<div class="card demo-story">
+  <div><div class="eyebrow">WHAT THIS PROVES</div><h2>Unstructured field updates can become schedule-aware execution data.</h2></div>
+  <div class="story-grid"><span>Contractor statement</span><b>→</b><span>Structured facts</span><b>→</b><span>L6 activity</span><b>→</b><span>Plan vs actual</span></div>
+</div>
+{% endblock %}

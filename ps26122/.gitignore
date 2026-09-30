@@ -1,0 +1,10 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+data/ui_uploads/
+data/*.db
+data/*.db-journal
+data/*.db-shm
+data/*.db-wal
+*.pristine_backup

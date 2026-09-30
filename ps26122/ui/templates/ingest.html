@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="ingest-page">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">STEP 01 · INGESTION</div>
+      <h1>Field Report Processing</h1>
+      <p>Upload a document or paste field statements to begin processing.</p>
+    </div>
+    <div class="ingest-service-art" aria-hidden="true">
+      <img src="{{ url_for('static', filename='ingest_gov_art.png') }}" alt="">
+    </div>
+  </div>
+
+  <form id="ingestForm" class="ingest-form">
+    <div class="card ingest-card">
+      <div class="ingest-columns">
+        <section class="ingest-column upload-column" aria-labelledby="upload-title">
+          <div class="ingest-section-heading">
+            <span class="ingest-number" aria-hidden="true">1</span>
+            <div>
+              <h2 id="upload-title">Upload Document</h2>
+              <p>Upload a field report document (PDF, CSV, XLSX, or TXT)</p>
+            </div>
+          </div>
+
+          <label class="ingest-dropzone" id="dropzone" for="fileInput">
+            <input id="fileInput" class="ingest-file-input" type="file" name="file" accept=".txt,.log,.csv,.xlsx,.xlsm,.pdf" aria-label="Choose a field report document">
+            <svg class="ingest-cloud-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M9.2 23.8H7.6a5.1 5.1 0 0 1-.4-10.2A8.8 8.8 0 0 1 24 11.9a5.9 5.9 0 0 1 .4 11.8h-1.6" stroke="#145a98" stroke-width="2.1" stroke-linecap="round"/><path d="M16 27V15m0 0-4.2 4.2M16 15l4.2 4.2" stroke="#145a98" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <strong>Drag and drop a file here</strong>
+            <span class="ingest-drop-sub">or click to browse from your computer</span>
+            <span class="ingest-choose-file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4.5 4.6V20H6a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 6 3.5Z"/><path d="M14 3.8v4.5h4.2M8 13h8M8 16.5h8"/></svg>Choose File</span>
+            <span id="fileName" class="ingest-selected-file hidden"></span>
+          </label>
+          <div class="ingest-upload-note">
+            <span>Supports PDF, CSV, XLSX, XLSM, TXT, LOG</span>
+            <i aria-hidden="true"></i>
+            <span>Max size: 10 MB</span>
+          </div>
+        </section>
+
+        <div class="ingest-or-divider" aria-hidden="true"><span>OR</span></div>
+
+        <section class="ingest-column paste-column" aria-labelledby="paste-title">
+          <div class="ingest-section-heading">
+            <span class="ingest-paste-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M6 3.5h8l4.5 4.6V20H6a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 6 3.5Z" stroke="#168a50" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.8v4.5h4.2M8 12h7M8 15.5h7" stroke="#168a50" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </span>
+            <div>
+              <h2 id="paste-title">Paste Field Statements</h2>
+              <p>Paste field statements or observations below</p>
+            </div>
+          </div>
+          <label class="visually-hidden" for="raw_text">Paste field statements</label>
+          <textarea id="raw_text" name="raw_text" rows="6" placeholder="Example: 24-inch CS spool erection on Line 24 completed on 30 Aug by ABC Piping.">{{ '\n'.join(ingestion.statements) if ingestion and ingestion.source_name == 'Pasted text' else '' }}</textarea>
+          <div class="ingest-character-count"><span id="rawTextCount">0</span> characters</div>
+        </section>
+      </div>
+
+      <input type="hidden" id="report_date" name="report_date" value="{{ ingestion.report_date if ingestion else '' }}">
+      <div class="ingest-card-footer">
+        <div id="ingestError" class="alert error hidden" role="alert"></div>
+        <button class="primary ingest-submit" type="submit">Continue to Extraction <span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

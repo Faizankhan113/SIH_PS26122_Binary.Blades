@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PS 26122 • Progress Intelligence Demo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="{% if request.endpoint == 'login' %}login-route{% endif %}">
+<header class="gov-header">
+  <div class="gov-header-inner">
+    <a class="gov-identity" href="{{ url_for('index') }}" aria-label="Government of India — Home">
+      <img class="gov-emblem" src="{{ url_for('static', filename='goi_emblem.png') }}" alt="">
+      <span class="gov-name">
+        <span class="gov-name-hi" lang="hi">भारत सरकार</span>
+        <span class="gov-name-en">GOVERNMENT OF INDIA</span>
+      </span>
+    </a>
+    <span class="gov-divider" aria-hidden="true"></span>
+    <div class="gov-slogan">
+      <span lang="hi">जनहित में पारदर्शिता</span>
+      <small>Transparency for a Stronger India</small>
+    </div>
+    <svg class="gov-tricolor-wave" viewBox="0 0 420 74" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 53 C62 49 100 10 181 8 C264 6 318 27 420 0 L420 11 C323 38 263 18 181 20 C105 22 69 60 0 65 Z" fill="#f7941d" opacity=".88"/>
+      <path d="M0 62 C70 58 111 30 186 29 C268 28 325 48 420 18 L420 30 C326 60 269 40 186 41 C111 42 67 69 0 73 Z" fill="#168a50" opacity=".92"/>
+    </svg>
+    <img class="gov-digital" src="{{ url_for('static', filename='digital_india_mark.png') }}" alt="Digital India — Power to Empower">
+    <div class="gov-header-right">
+      {% if current_user %}
+        <nav class="gov-nav" aria-label="Application navigation">
+          {% if current_user.role == 'supervisor' %}
+            <a href="{{ url_for('review') }}">Review Queue</a>
+            <a href="{{ url_for('planner') }}">Planner List{% if open_planner_items %} <span class="nav-count" title="Open items">{{ open_planner_items }}</span>{% endif %}</a>
+          {% else %}
+            <a href="{{ url_for('ingest') }}">Submit Report</a>
+          {% endif %}
+          <a href="{{ url_for('memory') }}">Institutional Memory</a>
+        </nav>
+        <div class="gov-account">
+          <span class="gov-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" fill="#ffffff"/><path d="M5.5 19c.8-3.2 3.1-4.8 6.5-4.8s5.7 1.6 6.5 4.8" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>
+          </span>
+          <span class="gov-user-name">{{ current_user.name }}</span>
+        </div>
+        <form method="post" action="{{ url_for('logout') }}" class="gov-logout-form">
+          <button type="submit" class="gov-logout">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 8l4 4-4 4M8 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Logout</span>
+          </button>
+        </form>
+      {% else %}
+        <a class="gov-login" href="{{ url_for('login') }}">Login</a>
+      {% endif %}
+      <div class="gov-developed">
+        <span class="gov-developed-lines" aria-hidden="true"><i></i><i></i></span>
+        <span lang="hi">विकसित भारत</span>
+        <small>DEVELOPED INDIA</small>
+      </div>
+    </div>
+  </div>
+</header>
+<div class="shell{% if request.endpoint == 'login' %} login-shell{% endif %}">
+  {% if not hide_stepper %}
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="{{ url_for('index') }}">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 10.7 12 3l9 7.7v9a1.3 1.3 0 0 1-1.3 1.3H5.3A2.3 2.3 0 0 1 3 18.7z"/><path d="M9 21v-7h6v7" fill="#fff"/></svg>
+      <span>Home</span>
+    </a>
+    <span class="crumb-chevron" aria-hidden="true">›</span>
+    <span class="crumb-current" aria-current="page">{{ ['','Ingest','Extract','Match'][step] if step in [1,2,3] else '' }}</span>
+  </nav>
+  {% include '_workflow_stepper.html' %}
+  {% endif %}
+  {% block content %}{% endblock %}
+</div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

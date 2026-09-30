@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">STEP 02 · EXTRACTION</div><h1>Reading the field report…</h1><p>Each statement is being read on its own. You can leave this page open; results appear here as they finish.</p></div><div class="source-chip">{{ source }} · {{ report_date }}</div></div>
+
+<div id="extractProgress" class="card extract-progress" data-total="{{ progress.total }}">
+  <div class="extract-progress-head">
+    <strong id="extractCount">{{ progress.finished }} of {{ progress.total }} statements finished</strong>
+    <span id="extractNote" class="extract-note" aria-live="polite"></span>
+  </div>
+  <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="{{ progress.total }}" aria-valuenow="{{ progress.finished }}">
+    <div id="extractBar" class="progress-fill" style="width: {{ (100 * progress.finished / progress.total)|round(0) if progress.total else 0 }}%"></div>
+  </div>
+  <ol class="extract-list">
+    {% for item in items %}
+    <li data-idx="{{ item.idx }}" class="extract-item state-{{ item.state }}">
+      <span class="extract-state" data-role="state">{{ {'pending': 'Waiting', 'running': 'Reading…', 'done': 'Done', 'failed': 'Failed'}[item.state] }}</span>
+      <span class="extract-text">{{ item.statement }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  <div id="extractError" class="alert error hidden" role="alert"></div>
+</div>
+{% endblock %}

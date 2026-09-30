@@ -1,0 +1,28 @@
+<nav class="stepper" aria-label="Report processing stages">
+  <a class="step available active {% if step == 1 %}current{% endif %}"
+     href="{{ url_for('ingest') }}" {% if step == 1 %}aria-current="step"{% endif %}>
+    <span>1</span><div><b>Ingest</b><small>Field input</small></div>
+  </a>
+  <div class="line {% if can_extract %}active{% endif %}" aria-hidden="true"></div>
+  {% if can_extract or step == 2 or step == 3 %}
+  <a class="step available active {% if step == 2 %}current{% endif %}"
+     href="{{ url_for('extracted') }}" {% if step == 2 %}aria-current="step"{% endif %}>
+    <span>2</span><div><b>Extract</b><small>Structured facts</small></div>
+  </a>
+  {% else %}
+  <div class="step disabled" aria-disabled="true" title="Complete ingestion to unlock extraction">
+    <span>2</span><div><b>Extract</b><small>Structured facts</small></div>
+  </div>
+  {% endif %}
+  <div class="line {% if can_match %}active{% endif %}" aria-hidden="true"></div>
+  {% if can_match or step == 3 %}
+  <a class="step available active {% if step == 3 %}current{% endif %}"
+     href="{{ url_for('matched') }}" {% if step == 3 %}aria-current="step"{% endif %}>
+    <span>3</span><div><b>Match</b><small>Plan alignment</small></div>
+  </a>
+  {% else %}
+  <div class="step disabled" aria-disabled="true" title="Complete matching to unlock this section">
+    <span>3</span><div><b>Match</b><small>Plan alignment</small></div>
+  </div>
+  {% endif %}
+</nav>

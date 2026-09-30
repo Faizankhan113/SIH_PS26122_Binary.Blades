@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">SUPERVISOR</div><h1>Planner list.</h1><p>These field statements could not be matched to any planned activity, so they may be <b>new or unlisted work</b>. Nothing here changes the schedule or the plan. <b>Dismiss</b> closes an item that needs no action; <b>Mark as new activity</b> records that the planner should add it, as a note only.</p></div></div>
+
+{% if db_error %}<div class="alert error">Could not load the planner list: {{ db_error }}</div>{% endif %}
+
+<div class="card stack" style="padding:24px">
+  <nav class="planner-tabs" aria-label="Planner list filter">
+    {% for key, label in [('open','Open'),('dismissed','Dismissed'),('converted','Marked as new'),('all','All')] %}
+    <a href="{{ url_for('planner', status=key) }}" class="{% if status == key %}active{% endif %}"{% if status == key %} aria-current="page"{% endif %}>{{ label }} <span class="muted">({{ counts.get(key, 0) }})</span></a>
+    {% endfor %}
+  </nav>
+
+  {% if not items %}
+  <p class="muted" style="font-size:13px" id="plannerEmpty">
+    {% if status == 'open' %}Nothing waiting for the planner right now.{% else %}No items in this list.{% endif %}
+  </p>
+  {% else %}
+  <div class="stack" id="plannerList">
+    {% for u in items %}
+    <div class="card" style="padding:16px" id="planner-row-{{ u.update_id }}">
+      <div class="event-head">
+        <div><span class="index-badge">{{ loop.index }}</span><b>{{ u.activity_description or 'Field event' }}</b>{% if u.asset %}<span class="tag">{{ u.asset }}</span>{% endif %}{% if u.extraction_degraded %}<span class="degraded-badge">Degraded extraction</span>{% endif %}</div>
+        <span class="status status-planner-{{ u.planner_status }}">{{ {'open':'OPEN','dismissed':'DISMISSED','converted':'MARKED AS NEW'}[u.planner_status] }}</span>
+      </div>
+      <div class="review-source">
+        <span><label>Reported by</label> <strong>{{ u.reported_by }}</strong></span>
+        <span><label>Saved</label> <strong>{{ (u.created_at or '')[:16]|replace('T', ' ') or '—' }}</strong></span>
+        <span><label>Report date</label> <strong>{{ u.report_date or '—' }}</strong></span>
+        <span><label>Source</label> <strong>{{ u.source_file or u.source_type or '—' }}</strong></span>
+        <span><label>Update</label> <strong>{{ u.update_id }}</strong></span>
+      </div>
+      {% if u.raw_text %}<div class="evidence"><span>Field statement</span>“{{ u.raw_text }}”</div>{% endif %}
+      {% if u.evidence_quote %}<div class="evidence"><span>Evidence quote</span>“{{ u.evidence_quote }}”</div>{% endif %}
+
+      <div class="review-h">What was extracted</div>
+      <div class="event-grid">
+        <div><label>Activity</label><strong>{{ u.activity_description or '—' }}</strong></div>
+        <div><label>Asset</label><strong>{{ u.asset or '—' }}</strong></div>
+        <div><label>Discipline</label><strong>{{ u.discipline or '—' }}</strong></div>
+        <div><label>Location</label><strong>{{ u.location or '—' }}</strong></div>
+        <div><label>Status</label><strong>{{ u.status or '—' }}</strong></div>
+        <div><label>Contractor</label><strong>{{ u.contractor or '—' }}</strong></div>
+        <div><label>Actual start</label><strong>{{ u.actual_start|fmt_actual(u.actual_start_time_stated) or '—' }}</strong></div>
+        <div><label>Actual finish</label><strong>{{ u.actual_finish|fmt_actual(u.actual_finish_time_stated) or '—' }}</strong></div>
+        <div><label>ID / WBS quoted</label><strong>{{ u.activity_ref or '—' }}</strong></div>
+      </div>
+      {% if u.extraction_degraded %}<div class="alert error" role="alert" style="margin-top:10px"><b>Extraction failed.</b> The fields above are keyword guesses{% if u.extraction_error %} ({{ u.extraction_error }}){% endif %}: rely on the field statement.</div>{% endif %}
+
+      {% if u.match_reason %}<div class="reason" style="margin-top:10px"><b>Why no match?</b> {{ u.match_reason }}</div>{% endif %}
+
+      <div class="review-h">Closest planned activities</div>
+      {% if u.alternatives %}
+      <table class="data-table review-alts">
+        <thead><tr><th style="width:auto">Activity</th><th>Description</th><th>Retrieval score</th></tr></thead>
+        <tbody>{% for alt in u.alternatives %}
+          <tr><td><strong>{{ alt.activity_id }}</strong></td><td>{{ alt.description or '—' }}</td><td>{% if alt.score is not none %}{{ (alt.score * 100)|round|int }}%{% else %}—{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">These are the nearest planned activities, not matches: none was close enough to accept.</p>
+      {% else %}
+      <p class="muted" style="font-size:12px;margin:4px 0 0">None stored for this item (nothing came close, or it was saved before this was recorded).</p>
+      {% endif %}
+
+      {% if u.planner_status == 'open' %}
+      <div class="planner-decide">
+        <label for="note-{{ u.update_id }}">Note for the record (optional)</label>
+        <textarea id="note-{{ u.update_id }}" class="planner-note" rows="2" maxlength="500" placeholder="For example: new spool piece, add under Line 24"></textarea>
+        <div class="action-row">
+          <button class="secondary planner-dismiss-btn" data-update-id="{{ u.update_id }}">Dismiss</button>
+          <button class="primary planner-convert-btn" data-update-id="{{ u.update_id }}">Mark as new activity</button>
+        </div>
+      </div>
+      {% else %}
+      <div class="planner-decided">
+        <b>{{ 'Dismissed' if u.planner_status == 'dismissed' else 'Marked as new activity' }}</b>
+        by {{ u.planner_decided_by or '—' }}{% if u.planner_decided_at %} on {{ u.planner_decided_at[:16]|replace('T', ' ') }}{% endif %}.
+        {% if u.planner_note %}<div class="planner-note-text">Note: {{ u.planner_note }}</div>{% endif %}
+        {% if u.planner_status == 'converted' %}<div class="muted" style="font-size:12px">This is a note only. The schedule was not edited.</div>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

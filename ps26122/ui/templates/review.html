@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">SUPERVISOR</div><h1>Review queue.</h1><p>Each item below was saved by the matching step and is <b>waiting for your decision</b>; the plan has not changed yet. <b>Approve</b> applies the update to the matched activity once and records your name; <b>Reject</b> keeps it as history and leaves the plan unchanged.</p></div></div>
+
+{% if db_error %}<div class="alert error">Could not load the review queue: {{ db_error }}</div>{% endif %}
+
+<div class="card stack" style="padding:24px;margin-bottom:18px">
+  <h3 style="margin:0 0 4px">Pending contractor accounts <span class="muted" style="font-weight:400">({{ pending_accounts|length }})</span></h3>
+  <p class="muted" style="font-size:12px;margin:0 0 8px">New contractor sign-ups need approval before they can log in.</p>
+  {% if not pending_accounts %}
+  <p class="muted" style="font-size:13px">No pending sign-ups.</p>
+  {% else %}
+  <table class="data-table">
+    <thead><tr><th>Name</th><th>Username</th><th>Requested</th><th style="width:auto">Action</th></tr></thead>
+    <tbody>
+      {% for acct in pending_accounts %}
+      <tr id="acct-row-{{ acct.user_id }}">
+        <td><strong>{{ acct.name }}</strong></td>
+        <td>{{ acct.username }}</td>
+        <td>{{ acct.created_at }}</td>
+        <td>
+          <button class="secondary account-approve-btn" data-user-id="{{ acct.user_id }}" style="padding:6px 12px;font-size:12px">Approve</button>
+          <button class="secondary account-reject-btn" data-user-id="{{ acct.user_id }}" style="padding:6px 12px;font-size:12px;color:var(--bad)">Reject</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="card stack" style="padding:24px">
+  <h3 style="margin:0 0 4px">Matches awaiting review <span class="muted" style="font-weight:400">(<span id="reviewCount">{{ pending_reviews|length }}</span>)</span></h3>
+  <p class="muted" style="font-size:12px;margin:0 0 8px">Confidence landed between the auto-accept and unmatched thresholds — a human call is needed.</p>
+  <p id="reviewEmpty" class="muted" style="font-size:13px{% if pending_reviews %};display:none{% endif %}">Nothing waiting on review right now.</p>
+  {% if pending_reviews %}
+  <div class="stack" id="reviewList">
+    {% for u in pending_reviews %}
+    <div class="card" style="padding:16px" id="review-row-{{ u.update_id }}">
+      <div class="event-head">
+        <div><span class="index-badge">{{ loop.index }}</span><b>{{ u.activity_description or 'Field event' }}</b>{% if u.asset %}<span class="tag">{{ u.asset }}</span>{% endif %}{% if u.extraction_degraded %}<span class="degraded-badge">Degraded extraction</span>{% endif %}</div>
+        <span class="status status-review">REVIEW · {{ (u.match_confidence * 100)|round|int if u.match_confidence is not none else '—' }}%</span>
+      </div>
+      <div class="review-source">
+        <span><label>Reported by</label> <strong>{{ u.reported_by }}</strong></span>
+        <span><label>Saved</label> <strong>{{ (u.created_at or '')[:16]|replace('T', ' ') or '—' }}</strong></span>
+        <span><label>Report date</label> <strong>{{ u.report_date or '—' }}</strong></span>
+        <span><label>Source</label> <strong>{{ u.source_file or u.source_type or '—' }}</strong></span>
+        <span><label>Update</label> <strong>{{ u.update_id }}</strong></span>
+      </div>
+      {% if u.raw_text %}<div class="evidence"><span>Field statement</span>“{{ u.raw_text }}”</div>{% endif %}
+
+      <div class="review-h">Extracted fields</div>
+      <div class="event-grid">
+        <div><label>Activity</label><strong>{{ u.activity_description or '—' }}</strong></div>
+        <div><label>Asset</label><strong>{{ u.asset or '—' }}</strong></div>
+        <div><label>Discipline</label><strong>{{ u.discipline or '—' }}</strong></div>
+        <div><label>Location</label><strong>{{ u.location or '—' }}</strong></div>
+        <div><label>Status</label><strong>{{ u.status or '—' }}</strong></div>
+        <div><label>Progress</label><strong>{% if u.progress_percent is not none %}{{ u.progress_percent|round|int }}%{% else %}—{% endif %}</strong></div>
+        <div><label>Actual start</label><strong>{{ u.actual_start|fmt_actual(u.actual_start_time_stated) or '—' }}</strong></div>
+        <div><label>Actual finish</label><strong>{{ u.actual_finish|fmt_actual(u.actual_finish_time_stated) or '—' }}</strong></div>
+        <div><label>Contractor</label><strong>{{ u.contractor or '—' }}</strong></div>
+        <div><label>Delay reason</label><strong>{{ u.delay_reason_reported or '—' }}{% if u.delay_reason_category %} <span class="tag">{{ u.delay_reason_category }}</span>{% endif %}</strong></div>
+        <div><label>ID / WBS quoted</label><strong>{{ u.activity_ref or '—' }}</strong></div>
+        <div><label>Evidence quote</label><strong>{{ u.evidence_quote or '—' }}</strong></div>
+      </div>
+      {% if u.extraction_degraded %}<div class="alert error" role="alert" style="margin-top:10px"><b>Extraction failed.</b> The fields above are keyword guesses{% if u.extraction_error %} ({{ u.extraction_error }}){% endif %}: read the field statement yourself before approving. Approving writes these guesses to the plan and needs a second confirmation.</div>{% endif %}
+
+      <div class="review-h">Proposed match</div>
+      <div class="event-grid">
+        <div><label>Matched L6</label><strong>{{ u.target_l6_id or 'None' }}{% if u.matched_activity_description %} · {{ u.matched_activity_description }}{% endif %}</strong></div>
+        <div><label>Confidence</label><strong>{{ (u.match_confidence * 100)|round|int if u.match_confidence is not none else '—' }}%</strong></div>
+        <div><label>Match method</label><strong>{{ u.match_method or '—' }}</strong></div>
+        <div><label>Plan now</label><strong>{{ u.matched_activity_status or '—' }}{% if u.matched_activity_progress is not none %} · {{ u.matched_activity_progress|round|int }}%{% endif %}{% if u.matched_activity_planned_finish %} · planned finish {{ u.matched_activity_planned_finish }}{% endif %}</strong></div>
+      </div>
+      {% if u.match_reason %}<div class="reason" style="margin-top:10px"><b>Why REVIEW?</b> {{ u.match_reason }}</div>{% endif %}
+
+      <div class="review-h">Other candidates the matcher considered</div>
+      {% if u.alternatives %}
+      <table class="data-table review-alts">
+        <thead><tr><th style="width:auto">Activity</th><th>Description</th><th>Retrieval score</th></tr></thead>
+        <tbody>{% for alt in u.alternatives %}
+          <tr><td><strong>{{ alt.activity_id }}</strong></td><td>{{ alt.description or '—' }}</td><td>{% if alt.score is not none %}{{ (alt.score * 100)|round|int }}%{% else %}—{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      {% else %}
+      <p class="muted" style="font-size:12px;margin:4px 0 0">None stored for this item (it has no other candidates, or it was saved before this was recorded).</p>
+      {% endif %}
+      <div class="action-row">
+        <button class="secondary review-reject-btn" data-update-id="{{ u.update_id }}" style="color:var(--bad)">Reject</button>
+        <button class="primary review-approve-btn" data-update-id="{{ u.update_id }}"{% if u.extraction_degraded %} data-degraded="1"{% endif %}>Approve</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

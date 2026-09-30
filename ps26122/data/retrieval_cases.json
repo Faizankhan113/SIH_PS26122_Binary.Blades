@@ -1,0 +1,312 @@
+{
+  "_comment": "Synthetic retrieval-only cases for python -m src.retrieval_eval. 'expected' lists every activity that is a correct answer; the rank reported is the best rank among them. Group 'id': the report names an activity code / WBS / activity ID. Group 'thin': the extracted fields are thin but the raw report text is informative. Group 'noisy' is a guard: the extracted fields are RIGHT but the sentence also mentions a neighbouring activity, so a raw-text signal that is too strong would get these wrong. The labelled set (labelled_cases.json) is added automatically as group 'labelled'.",
+  "cases": [
+    {
+      "id": "id-code-in-text",
+      "group": "id",
+      "expected": [
+        "L6-103"
+      ],
+      "event": {
+        "activity_description": "PIP-A100-103 completed",
+        "raw_text": "PIP-A100-103 completed"
+      }
+    },
+    {
+      "id": "id-wbs-in-text",
+      "group": "id",
+      "expected": [
+        "L6-103",
+        "L6-104"
+      ],
+      "event": {
+        "activity_description": "WBS A100.02 work finished",
+        "raw_text": "WBS A100.02 work finished"
+      }
+    },
+    {
+      "id": "id-code-as-ref",
+      "group": "id",
+      "expected": [
+        "L6-103"
+      ],
+      "event": {
+        "activity_description": "valve work",
+        "activity_ref": "PIP-A100-103",
+        "raw_text": "Valve work completed, ref PIP-A100-103"
+      }
+    },
+    {
+      "id": "id-wbs-as-ref",
+      "group": "id",
+      "expected": [
+        "L6-153",
+        "L6-154"
+      ],
+      "event": {
+        "activity_description": "erection",
+        "activity_ref": "A600.03",
+        "raw_text": "Erection at A600.03 finished"
+      }
+    },
+    {
+      "id": "id-activity-id",
+      "group": "id",
+      "expected": [
+        "L6-153"
+      ],
+      "event": {
+        "activity_description": "L6-153 done",
+        "raw_text": "L6-153 done"
+      }
+    },
+    {
+      "id": "id-code-other-area",
+      "group": "id",
+      "expected": [
+        "L6-178"
+      ],
+      "event": {
+        "activity_description": "HSE-A300-178 complete",
+        "raw_text": "HSE-A300-178 complete"
+      }
+    },
+    {
+      "id": "thin-oil-piping",
+      "group": "thin",
+      "expected": [
+        "L6-115"
+      ],
+      "event": {
+        "activity_description": "piping",
+        "discipline": "Piping",
+        "contractor": "Kiran Mech",
+        "raw_text": "Lube oil piping for K-201 completed by Kiran Mech on 12 Sep"
+      }
+    },
+    {
+      "id": "thin-tank-foundation",
+      "group": "thin",
+      "expected": [
+        "L6-143"
+      ],
+      "event": {
+        "activity_description": "work",
+        "raw_text": "Tank T-502 foundation pour finished 3 Sep 2026"
+      }
+    },
+    {
+      "id": "thin-dew-point",
+      "group": "thin",
+      "expected": [
+        "L6-126"
+      ],
+      "event": {
+        "activity_description": "installation",
+        "contractor": "SparkInst",
+        "raw_text": "Dew point analyzer installation done today by SparkInst"
+      }
+    },
+    {
+      "id": "thin-fire-water",
+      "group": "thin",
+      "expected": [
+        "L6-179"
+      ],
+      "event": {
+        "activity_description": "test",
+        "raw_text": "Fire water ring main hydrotest passed on 21 Sep"
+      }
+    },
+    {
+      "id": "thin-safety-showers",
+      "group": "thin",
+      "expected": [
+        "L6-178"
+      ],
+      "event": {
+        "activity_description": "fitting",
+        "discipline": "HSE",
+        "contractor": "HSE Pro",
+        "raw_text": "Safety showers and eyewash stations fitted, contractor HSE Pro"
+      }
+    },
+    {
+      "id": "thin-mcc-feeders",
+      "group": "thin",
+      "expected": [
+        "L6-164"
+      ],
+      "event": {
+        "activity_description": "cabling",
+        "contractor": "PowerLine",
+        "raw_text": "MCC-701 feeder cabling started 5 Sep by PowerLine"
+      }
+    },
+    {
+      "id": "thin-dyke-wall",
+      "group": "thin",
+      "expected": [
+        "L6-173"
+      ],
+      "event": {
+        "activity_description": "civil work",
+        "raw_text": "Dyke wall and bund drainage at the tank farm 60 percent complete"
+      }
+    },
+    {
+      "id": "thin-glycol-package",
+      "group": "thin",
+      "expected": [
+        "L6-122"
+      ],
+      "event": {
+        "activity_description": "set package",
+        "raw_text": "Glycol regeneration package set on foundation"
+      }
+    },
+    {
+      "id": "thin-cw-return",
+      "group": "thin",
+      "expected": [
+        "L6-134"
+      ],
+      "event": {
+        "activity_description": "pipe work",
+        "contractor": "Hydroflow",
+        "raw_text": "Fabrication of cooling water return line at Area 400 done, contractor Hydroflow"
+      }
+    },
+    {
+      "id": "thin-tank-shell",
+      "group": "thin",
+      "expected": [
+        "L6-142"
+      ],
+      "event": {
+        "activity_description": "erection",
+        "raw_text": "T-501 storage tank shell erection completed 14 Sep"
+      }
+    },
+    {
+      "id": "thin-diesel-genset",
+      "group": "thin",
+      "expected": [
+        "L6-137"
+      ],
+      "event": {
+        "activity_description": "placement",
+        "contractor": "PowerSet",
+        "raw_text": "Diesel genset DG-401 positioned and grouted by PowerSet"
+      }
+    },
+    {
+      "id": "thin-scaffold-tagging",
+      "group": "thin",
+      "expected": [
+        "L6-177"
+      ],
+      "event": {
+        "activity_description": "inspection",
+        "raw_text": "Scaffold tagging around the compressor building finished"
+      }
+    },
+    {
+      "id": "thin-vibration-probes",
+      "group": "thin",
+      "expected": [
+        "L6-119"
+      ],
+      "event": {
+        "activity_description": "mounting",
+        "raw_text": "Vibration probes on K-202 mounted"
+      }
+    },
+    {
+      "id": "thin-substation-energised",
+      "group": "thin",
+      "expected": [
+        "L6-169"
+      ],
+      "event": {
+        "activity_description": "energisation",
+        "raw_text": "Substation S-701 energised for the first time today"
+      }
+    },
+    {
+      "id": "thin-branch-pedestals",
+      "group": "thin",
+      "expected": [
+        "L6-174"
+      ],
+      "event": {
+        "activity_description": "casting",
+        "raw_text": "Cast pedestals for the branch pipe rack completed 60%"
+      }
+    },
+    {
+      "id": "thin-slug-catcher",
+      "group": "thin",
+      "expected": [
+        "L6-105"
+      ],
+      "event": {
+        "activity_description": "vessel setting",
+        "contractor": "HeavyLift",
+        "raw_text": "Slug catcher V-101 vessel placed on saddles by HeavyLift"
+      }
+    },
+    {
+      "id": "noisy-line-24",
+      "group": "noisy",
+      "expected": [
+        "L6-153"
+      ],
+      "event": {
+        "activity_description": "Erect Line 24",
+        "asset": "Line 24",
+        "discipline": "Piping",
+        "raw_text": "Line 24 erection completed today; Line 25 crew is still waiting for material"
+      }
+    },
+    {
+      "id": "noisy-transformer",
+      "group": "noisy",
+      "expected": [
+        "L6-162"
+      ],
+      "event": {
+        "activity_description": "Install transformer",
+        "asset": "TR-701",
+        "discipline": "Electrical",
+        "location": "Area 700",
+        "raw_text": "TR-701 transformer installed, switchgear SWGR-701 scheduled next week"
+      }
+    },
+    {
+      "id": "noisy-glycol",
+      "group": "noisy",
+      "expected": [
+        "L6-122"
+      ],
+      "event": {
+        "activity_description": "Set glycol regeneration package",
+        "discipline": "Mechanical",
+        "raw_text": "Glycol regeneration package set; contactor T-301 will follow tomorrow"
+      }
+    },
+    {
+      "id": "noisy-transmitters",
+      "group": "noisy",
+      "expected": [
+        "L6-108"
+      ],
+      "event": {
+        "activity_description": "Install pressure transmitters",
+        "asset": "PT-101/PT-102",
+        "discipline": "Instrumentation",
+        "raw_text": "PT-101/PT-102 installed. Level instruments LT-101/LT-102 pending"
+      }
+    }
+  ]
+}

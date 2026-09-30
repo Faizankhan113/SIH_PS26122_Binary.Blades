@@ -1,0 +1,178 @@
+{
+  "_comment": "Labelled set for the match-decision calibration. Events are already-structured (extraction is not part of this test). SYNTHETIC data. 'expected' is an L6 id or 'UNMATCHED'. 'ambiguous': true means the event genuinely cannot be told apart from a sibling activity, so the only correct decision is REVIEW (never AUTO_ACCEPTED); 'expected' is then the most likely activity. Each case also has a 'statement': the report sentence the structured event was extracted from (used as the raw text).",
+  "cases": [
+    {
+      "id": "clear-01",
+      "category": "clear",
+      "expected": "L6-101",
+      "event": {
+        "activity_description": "Erect inlet header",
+        "asset": "Header-A",
+        "discipline": "Piping",
+        "location": "Area 100"
+      },
+      "statement": "Erection of inlet header Header-A in Area 100 completed by ABC Piping on 12 Sep"
+    },
+    {
+      "id": "clear-02",
+      "category": "clear",
+      "expected": "L6-102",
+      "event": {
+        "activity_description": "Erect inlet header",
+        "asset": "Header-B",
+        "discipline": "Piping",
+        "location": "Area 100"
+      },
+      "statement": "Inlet header Header-B erection in Area 100 is 60 percent complete"
+    },
+    {
+      "id": "clear-03",
+      "category": "clear",
+      "expected": "L6-103",
+      "event": {
+        "activity_description": "Install inlet isolation valve",
+        "asset": "Valve V-101A",
+        "discipline": "Piping",
+        "location": "Area 100"
+      },
+      "statement": "Inlet isolation valve V-101A installed in Area 100 today"
+    },
+    {
+      "id": "clear-04",
+      "category": "clear",
+      "expected": "L6-162",
+      "event": {
+        "activity_description": "Install substation transformer",
+        "asset": "TR-701",
+        "discipline": "Electrical",
+        "location": "Area 700"
+      },
+      "statement": "Substation transformer TR-701 installation finished on 18 Sep 2026 by PowerGrid Electricals"
+    },
+    {
+      "id": "clear-05",
+      "category": "clear",
+      "expected": "L6-163",
+      "event": {
+        "activity_description": "Install main switchgear",
+        "asset": "SWGR-701",
+        "discipline": "Electrical",
+        "location": "Area 700"
+      },
+      "statement": "Main switchgear SWGR-701 installed in Area 700, done yesterday"
+    },
+    {
+      "id": "clear-06",
+      "category": "clear",
+      "expected": "L6-129",
+      "event": {
+        "activity_description": "Hydrotest dehydration feed piping circuit",
+        "asset": "Dehydration Feed Circuit",
+        "discipline": "QA/QC",
+        "location": "Area 300"
+      },
+      "statement": "Hydrotest of dehydration feed piping circuit in Area 300 completed on 21/09/2026"
+    },
+    {
+      "id": "clear-07",
+      "category": "clear",
+      "expected": "L6-178",
+      "event": {
+        "activity_description": "Install safety showers and eyewash stations",
+        "asset": "Safety Showers SS-301/SS-302",
+        "discipline": "HSE",
+        "location": "Area 300"
+      },
+      "statement": "Safety showers and eyewash stations (SS-301/SS-302) installed in Area 300"
+    },
+    {
+      "id": "twin-01",
+      "category": "ambiguous twins",
+      "expected": "L6-108",
+      "ambiguous": true,
+      "event": {
+        "activity_description": "instrument installation",
+        "asset": null,
+        "discipline": "Instrumentation",
+        "location": "Area 100"
+      },
+      "statement": "Instrument installation in Area 100 progressing, 40 percent done"
+    },
+    {
+      "id": "twin-02",
+      "category": "ambiguous twins",
+      "expected": "L6-162",
+      "ambiguous": true,
+      "event": {
+        "activity_description": "substation equipment installation",
+        "asset": null,
+        "discipline": "Electrical",
+        "location": "Area 700"
+      },
+      "statement": "Substation equipment installation in Area 700 completed 20 Sep"
+    },
+    {
+      "id": "twin-03",
+      "category": "ambiguous twins",
+      "expected": "L6-111",
+      "ambiguous": true,
+      "event": {
+        "activity_description": "K-201 installation",
+        "asset": "K-201",
+        "discipline": null,
+        "location": null
+      },
+      "statement": "K-201 installation started on 3 Sep by MechWorks"
+    },
+    {
+      "id": "twin-04",
+      "category": "ambiguous twins",
+      "expected": "L6-175",
+      "ambiguous": true,
+      "event": {
+        "activity_description": "Gas detector loop installed and tested",
+        "asset": null,
+        "discipline": "HSE",
+        "location": "Area 100"
+      },
+      "statement": "Gas detector loop installed and tested in Area 100 today"
+    },
+    {
+      "id": "twin-05",
+      "category": "ambiguous twins",
+      "expected": "L6-117",
+      "ambiguous": true,
+      "event": {
+        "activity_description": "Compressor motor feeders installed",
+        "asset": null,
+        "discipline": "Electrical",
+        "location": "Area 200"
+      },
+      "statement": "Compressor motor feeders installed in Area 200, completed by VoltCo"
+    },
+    {
+      "id": "new-01",
+      "category": "unmatched",
+      "expected": "UNMATCHED",
+      "event": {
+        "activity_description": "Helipad perimeter lighting installation",
+        "asset": null,
+        "discipline": "Electrical",
+        "location": "Area 900"
+      },
+      "statement": "Helipad perimeter lighting installation in Area 900 started today"
+    },
+    {
+      "id": "new-02",
+      "category": "unmatched",
+      "expected": "UNMATCHED",
+      "event": {
+        "activity_description": "Construct site canteen and welfare building",
+        "asset": null,
+        "discipline": "Civil",
+        "location": "Main gate"
+      },
+      "statement": "Site canteen and welfare building construction at the main gate 20 percent done"
+    }
+  ]
+}
