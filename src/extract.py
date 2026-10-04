@@ -31,7 +31,7 @@ def extract_progress_event(
         raise ExtractionValidationError("Contractor statement cannot be empty.")
 
     # A report date is optional. For the normal application flow, automatically
-    # use today's date rather than relying on a hard-coded demo date.
+    # use today's date rather than a fixed date.
     report_date = report_date or today_local()
 
     event_id = f"EVT-{uuid.uuid4().hex[:8].upper()}"

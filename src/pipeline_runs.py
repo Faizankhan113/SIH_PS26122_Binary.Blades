@@ -4,7 +4,8 @@ extraction progress.
 Why: Flask's default session is a signed cookie that browsers cut off at about
 4 KB, and a run (statements, extraction results, match rows) is far bigger.
 The session now holds only ``run_id``; this module keeps everything else in
-the ``pipeline_runs`` and ``pipeline_run_items`` tables.
+the ``pipeline_runs`` and ``pipeline_run_items`` tables (PostgreSQL; the JSON
+columns are ``jsonb``, so psycopg hands them back as Python dicts/lists).
 
 Ownership: ``get_run`` only returns a run to the user who created it. The other
 functions take a run_id that the caller has already obtained that way.
@@ -15,11 +16,13 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from .database import get_connection
-from .timeutil import now_iso, now_local
+from .timeutil import now_local, to_local_iso
 
 RUN_TTL_HOURS_ENV = "PS26122_RUN_TTL_HOURS"
 DEFAULT_RUN_TTL_HOURS = 24.0
@@ -34,22 +37,30 @@ def _dumps(value: Any) -> str:
     return json.dumps(value, default=str)
 
 
+def _jsonb(value: Any) -> Jsonb:
+    """Wrap a Python value for a jsonb column (anything json cannot encode becomes text)."""
+    return Jsonb(value, dumps=_dumps)
+
+
 def create_run(user_id: str, ingestion: dict[str, Any]) -> str:
     """Store a new run (with one pending item per statement) and return its id."""
     run_id = f"RUN-{uuid.uuid4().hex[:12]}"
-    now = now_iso()
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO pipeline_runs (run_id, user_id, created_at, updated_at, ingestion_json) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (run_id, user_id, now, now, _dumps(ingestion)),
+            "INSERT INTO pipeline_runs (run_id, user_id, ingestion_json) VALUES (%s, %s, %s)",
+            (run_id, user_id, _jsonb(ingestion)),
         )
-        conn.executemany(
-            "INSERT INTO pipeline_run_items (run_id, idx, statement, state, updated_at) VALUES (?, ?, ?, 'pending', ?)",
-            [(run_id, i, text, now) for i, text in enumerate(ingestion.get("statements", []))],
-        )
+        # psycopg 3: executemany lives on the cursor, not on the connection.
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO pipeline_run_items (run_id, idx, statement, state) VALUES (%s, %s, %s, 'pending')",
+                [(run_id, i, text) for i, text in enumerate(ingestion.get("statements", []))],
+            )
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
     return run_id
@@ -63,7 +74,7 @@ def get_run(run_id: str | None, user_id: str | None) -> dict[str, Any] | None:
     try:
         row = conn.execute(
             "SELECT run_id, user_id, created_at, ingestion_json, match_json IS NOT NULL AS has_match "
-            "FROM pipeline_runs WHERE run_id = ? AND user_id = ?",
+            "FROM pipeline_runs WHERE run_id = %s AND user_id = %s",
             (run_id, user_id),
         ).fetchone()
     finally:
@@ -73,14 +84,14 @@ def get_run(run_id: str | None, user_id: str | None) -> dict[str, Any] | None:
     return {
         "run_id": row["run_id"],
         "user_id": row["user_id"],
-        "created_at": row["created_at"],
-        "ingestion": json.loads(row["ingestion_json"]),
+        "created_at": to_local_iso(row["created_at"]),
+        "ingestion": row["ingestion_json"],
         "has_match": bool(row["has_match"]),
     }
 
 
 def _touch(conn, run_id: str) -> None:
-    conn.execute("UPDATE pipeline_runs SET updated_at = ? WHERE run_id = ?", (now_iso(), run_id))
+    conn.execute("UPDATE pipeline_runs SET updated_at = now() WHERE run_id = %s", (run_id,))
 
 
 def delete_run(run_id: str | None) -> None:
@@ -88,7 +99,7 @@ def delete_run(run_id: str | None) -> None:
         return
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM pipeline_runs WHERE run_id = ?", (run_id,))  # items cascade
+        conn.execute("DELETE FROM pipeline_runs WHERE run_id = %s", (run_id,))  # items cascade
         conn.commit()
     finally:
         conn.close()
@@ -107,9 +118,9 @@ def claim_item(run_id: str, idx: int) -> bool:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE pipeline_run_items SET state = 'running', error = NULL, updated_at = ? "
-            "WHERE run_id = ? AND idx = ? AND state IN ('pending', 'failed')",
-            (now_iso(), run_id, idx),
+            "UPDATE pipeline_run_items SET state = 'running', error = NULL, updated_at = now() "
+            "WHERE run_id = %s AND idx = %s AND state IN ('pending', 'failed')",
+            (run_id, idx),
         )
         conn.commit()
         return cur.rowcount == 1
@@ -121,9 +132,9 @@ def save_item_result(run_id: str, idx: int, result: dict[str, Any]) -> None:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE pipeline_run_items SET state = 'done', result_json = ?, error = NULL, updated_at = ? "
-            "WHERE run_id = ? AND idx = ?",
-            (_dumps(result), now_iso(), run_id, idx),
+            "UPDATE pipeline_run_items SET state = 'done', result_json = %s, error = NULL, updated_at = now() "
+            "WHERE run_id = %s AND idx = %s",
+            (_jsonb(result), run_id, idx),
         )
         _touch(conn, run_id)
         conn.commit()
@@ -135,9 +146,9 @@ def save_item_failure(run_id: str, idx: int, error: str) -> None:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE pipeline_run_items SET state = 'failed', error = ?, updated_at = ? "
-            "WHERE run_id = ? AND idx = ?",
-            (error[:2000], now_iso(), run_id, idx),
+            "UPDATE pipeline_run_items SET state = 'failed', error = %s, updated_at = now() "
+            "WHERE run_id = %s AND idx = %s",
+            (error[:2000], run_id, idx),
         )
         _touch(conn, run_id)
         conn.commit()
@@ -150,7 +161,7 @@ def list_items(run_id: str) -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             "SELECT idx, statement, state, result_json, error FROM pipeline_run_items "
-            "WHERE run_id = ? ORDER BY idx",
+            "WHERE run_id = %s ORDER BY idx",
             (run_id,),
         ).fetchall()
     finally:
@@ -160,7 +171,7 @@ def list_items(run_id: str) -> list[dict[str, Any]]:
             "idx": r["idx"],
             "statement": r["statement"],
             "state": r["state"],
-            "result": json.loads(r["result_json"]) if r["result_json"] else None,
+            "result": r["result_json"],  # jsonb: already a dict (or None)
             "error": r["error"],
         }
         for r in rows
@@ -204,8 +215,8 @@ def recover_interrupted_items() -> int:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE pipeline_run_items SET state = 'failed', error = ?, updated_at = ? WHERE state = 'running'",
-            ("Extraction was interrupted (the server restarted). Retry to run it again.", now_iso()),
+            "UPDATE pipeline_run_items SET state = 'failed', error = %s, updated_at = now() WHERE state = 'running'",
+            ("Extraction was interrupted (the server restarted). Retry to run it again.",),
         )
         conn.commit()
         return cur.rowcount
@@ -221,8 +232,8 @@ def save_match_rows(run_id: str, rows: list[dict[str, Any]]) -> None:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE pipeline_runs SET match_json = ?, updated_at = ? WHERE run_id = ?",
-            (_dumps(rows), now_iso(), run_id),
+            "UPDATE pipeline_runs SET match_json = %s, updated_at = now() WHERE run_id = %s",
+            (_jsonb(rows), run_id),
         )
         conn.commit()
     finally:
@@ -232,12 +243,12 @@ def save_match_rows(run_id: str, rows: list[dict[str, Any]]) -> None:
 def get_match_rows(run_id: str) -> list[dict[str, Any]] | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT match_json FROM pipeline_runs WHERE run_id = ?", (run_id,)).fetchone()
+        row = conn.execute("SELECT match_json FROM pipeline_runs WHERE run_id = %s", (run_id,)).fetchone()
     finally:
         conn.close()
     if row is None or row["match_json"] is None:
         return None
-    return json.loads(row["match_json"])
+    return row["match_json"]  # jsonb: already a list
 
 
 # --------------------------------------------------------------------------
@@ -261,13 +272,12 @@ def cleanup_old_runs(max_age_hours: float | None = None) -> int:
     cutoff = now_local() - timedelta(hours=hours)
     conn = get_connection()
     try:
-        stale = [
-            r["run_id"]
-            for r in conn.execute("SELECT run_id, updated_at FROM pipeline_runs").fetchall()
-            if datetime.fromisoformat(r["updated_at"]) < cutoff
-        ]
-        conn.executemany("DELETE FROM pipeline_runs WHERE run_id = ?", [(rid,) for rid in stale])
+        # Items go with their run (ON DELETE CASCADE).
+        cur = conn.execute("DELETE FROM pipeline_runs WHERE updated_at < %s", (cutoff,))
         conn.commit()
-        return len(stale)
+        return cur.rowcount
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()

@@ -1,5 +1,8 @@
 pydantic>=2.0
 python-dotenv>=1.0
+
+# PostgreSQL driver (psycopg 3; the binary wheel needs no compiler)
+psycopg[binary]>=3.2
 openai>=1.0
 google-genai>=1.0
 
@@ -9,11 +12,8 @@ rapidfuzz>=3.6
 spacy>=3.8,<3.9
 # en_core_web_md is not on PyPI; install it separately (real word vectors,
 # no Hugging Face access required). Use the 3.8.0 model to match spacy>=3.8
-# above -- it has prebuilt wheels for Python 3.13 (the 3.7.x line's blis/
-# thinc dependency does not, and fails to compile from source there):
+# above (Python 3.13 has prebuilt wheels for it):
 #   pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl"
-# If you are on Python 3.10-3.12, the 3.7.1 model also works:
-#   pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.7.1/en_core_web_md-3.7.1-py3-none-any.whl"
 
 # Timezone database for zoneinfo (Windows has none built in)
 tzdata

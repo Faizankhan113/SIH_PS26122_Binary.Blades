@@ -22,7 +22,7 @@
 {% if not stats.total_updates %}
 <div class="card" style="padding:22px;margin-bottom:18px">
   <b>No historical data yet.</b>
-  <p class="muted" style="margin:6px 0 0">This view stays empty until execution history accumulates. For this demo, seed a synthetic history with:</p>
+  <p class="muted" style="margin:6px 0 0">This view fills as reports are applied and approved. To evaluate it with sample data, load a synthetic history with:</p>
   <code style="display:inline-block;margin-top:8px">python -m src.seed_history --reset</code>
 </div>
 {% endif %}

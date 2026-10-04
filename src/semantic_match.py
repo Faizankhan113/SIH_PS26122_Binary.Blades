@@ -375,7 +375,7 @@ def _rule_range_or_slash(a: str, b: str) -> bool:
 class _AliasRule(NamedTuple):
     name: str
     match: Callable[[str, str], bool]
-    # (a, b) pairs that MUST match; documents the intent and is checked by the tests.
+    # (a, b) pairs that MUST match; documents the intent.
     examples: tuple[tuple[str, str], ...]
 
 
@@ -559,8 +559,8 @@ class SemanticMatchIndex:
 
 # Cache one index per distinct schedule (keyed by the set of activity IDs +
 # count, so a stale index is never reused after the plan changes). 70 rows
-# is small enough that rebuilding is cheap, but caching keeps a live demo
-# snappy across repeated requests.
+# is small enough that rebuilding is cheap, but caching keeps repeated
+# requests fast across repeated requests.
 _INDEX_CACHE: dict[tuple, SemanticMatchIndex] = {}
 
 
@@ -585,7 +585,7 @@ def _get_index(schedule: list[dict[str, Any]]) -> SemanticMatchIndex:
     idx = _INDEX_CACHE.get(key)
     if idx is None:
         idx = SemanticMatchIndex(schedule)
-        _INDEX_CACHE.clear()  # only one schedule is ever live in this demo
+        _INDEX_CACHE.clear()  # only one schedule is live at a time
         _INDEX_CACHE[key] = idx
     return idx
 

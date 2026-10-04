@@ -48,6 +48,13 @@ def now_iso() -> str:
     return now_local().isoformat(timespec="seconds")
 
 
+def to_local_iso(value: datetime | None) -> str | None:
+    """A timestamptz value read from PostgreSQL -> ISO text in project-local time (or None)."""
+    if value is None:
+        return None
+    return value.astimezone(project_timezone()).isoformat(timespec="seconds")
+
+
 def today_local() -> date:
     """Today's date in the project timezone (not the server's)."""
     return now_local().date()

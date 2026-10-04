@@ -330,6 +330,6 @@ def provider_label(provider: LLMProvider) -> str:
 
 
 def clear_provider_cache() -> None:
-    """Forget cached providers (tests, or after changing keys in the environment)."""
+    """Forget cached providers (after changing keys in the environment)."""
     with _PROVIDERS_LOCK:
         _PROVIDERS.clear()

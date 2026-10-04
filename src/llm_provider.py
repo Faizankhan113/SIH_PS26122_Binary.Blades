@@ -27,7 +27,7 @@ class ProviderUnavailableError(ProviderError):
 
 
 class LLMProvider(ABC):
-    """Provider-neutral interface for the MVP.
+    """Provider-neutral LLM interface.
 
     The rest of the application should depend on this interface, not on
     Gemini/Groq SDKs. This lets us benchmark providers without rewriting

@@ -35,7 +35,7 @@
 
   {% if row.match.review_status == 'ERROR' %}
   <div class="alert error match-error" role="alert" style="margin-top:12px">
-    <div><b>Not matched: processing error.</b> {{ row.match.reason }} This is a failure of the system, not a finding about the report, so nothing was saved to the planner or the supervisor queue.</div>
+    <div><b>Not matched: processing error.</b> {{ row.match.reason }} This is a failure of the system, not a finding about the report, so nothing was added to the planner or the supervisor queue.</div>
     <button type="button" class="secondary retry-match" data-event-id="{{ row.event.event_id }}">Retry</button>
   </div>
   {% endif %}
@@ -43,6 +43,10 @@
   {% set oc = row.outcome %}
   {% if oc == 'APPLIED' %}
   <div class="alert outcome outcome-applied" role="status"><b>Saved and applied.</b> The plan now holds the values in the "after" record below (update {{ row.update_db.update_id }}).</div>
+  {% elif oc == 'HISTORICAL' %}
+  <div class="alert outcome outcome-logged" role="status"><b>Saved as history only.</b> A newer report has already set this activity, so the plan was not changed (update {{ row.update_db.update_id }}).</div>
+  {% elif oc == 'NO_CHANGE' %}
+  <div class="alert outcome outcome-logged" role="status"><b>Saved, no change.</b> This report agrees with what the plan already holds, so nothing was changed (update {{ row.update_db.update_id }}).</div>
   {% elif oc == 'PENDING' %}
   <div class="alert outcome outcome-pending" role="status"><b>Saved, waiting for supervisor.</b> The plan has not changed; a supervisor must approve update {{ row.update_db.update_id }} first.</div>
   {% elif oc == 'CONFLICT' %}
@@ -180,9 +184,4 @@
 </div>
 
 <div class="action-row"><a class="secondary" href="{{ url_for('extracted') }}">← Back to Extraction</a></div>
-
-<div class="card demo-story">
-  <div><div class="eyebrow">WHAT THIS PROVES</div><h2>Unstructured field updates can become schedule-aware execution data.</h2></div>
-  <div class="story-grid"><span>Contractor statement</span><b>→</b><span>Structured facts</span><b>→</b><span>L6 activity</span><b>→</b><span>Plan vs actual</span></div>
-</div>
 {% endblock %}

@@ -1,8 +1,8 @@
 """One-time manual seeding of test accounts.
 
 Supervisor accounts are not self-signup (they can approve/act on contractor
-submissions and shouldn't be self-granted), so for the prototype a handful
-are seeded directly with this script -- no admin UI needed yet.
+submissions and shouldn't be self-granted), so a handful
+are seeded directly with this script (there is no admin screen for creating supervisors).
 
 Run it directly:
 

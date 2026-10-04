@@ -1,26 +1,27 @@
-"""Seed synthetic historical progress_updates for the Institutional Memory views.
+"""Seed a synthetic execution history for the Institutional Memory views.
 
 This is a standalone, explicitly-invoked step, separate from the live
 ingestion -> extraction -> matching flow (which writes to the database on its
-own). It populates `progress_updates` (and the corresponding execution-state
-columns on `planned_l6_activities`) with a *synthetic* execution history,
-purely so the Institutional Memory views have something realistic to show.
-In production this history would instead accumulate naturally from real
-approved updates over the life of the project.
+own). It fills the report, statement, matching-result, decision and `main`
+tables with a *synthetic* execution history, purely so the Institutional
+Memory views have something realistic to show. In production this history
+would instead accumulate naturally from real approved updates over the life of
+the project.
 
 Run it directly:
 
     python -m src.seed_history            # seed on top of current DB
-    python -m src.seed_history --reset    # wipe history first, then seed
+    python -m src.seed_history --reset    # wipe report history first, then seed
 
 It reuses the real `save_progress_update()` persistence function rather than
 writing raw SQL, so the seeded data goes through the exact same rules real
 updates do:
 
-  - AUTO_ACCEPTED rows are applied to the plan.
-  - REVIEW rows are stored as history only and stay PENDING on purpose, so the
-    supervisor queue has content on first load. They do not change the plan and
-    are left out of the institutional-memory statistics until approved.
+  - AUTO_ACCEPTED rows get a system AUTO_ACCEPT decision and are applied to
+    `main`.
+  - REVIEW rows stay PENDING on purpose, so the supervisor queue has content on
+    first load. They do not change `main` and are left out of the
+    institutional-memory statistics until a supervisor approves them.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import random
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from .database import get_connection, initialize_database, reset_demo_data, save_progress_update
+from .database import get_connection, initialize_database, reset_history, save_progress_update
 from .timeutil import format_actual
 
 DELAY_CATEGORIES = [
@@ -80,7 +81,7 @@ DISCIPLINE_VARIANCE_BIAS = {
 
 
 # Share of seeded start / finish values that carry an explicit time of day.
-# The rest stay date-only on purpose, so the demo shows a realistic mix and no
+# The rest stay date-only on purpose, so the sample data shows a realistic mix and no
 # screen ever has a made-up 00:00. Decided with a SEPARATE random generator so
 # adding times did not change any earlier seeded choice (activities, statuses,
 # dates, reporters).
@@ -120,10 +121,20 @@ def seed_synthetic_history(seed: int = 42, fraction: float = 0.65) -> dict[str, 
     conn = get_connection()
     try:
         # Archived activities (removed from schedule.json) get no synthetic history.
+        # Dates come back as 'YYYY-MM-DD' text, and the "C" collation keeps the
+        # order a plain byte-wise sort by id, so the same --seed always picks the
+        # same activities whatever collation the database was created with.
         rows = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM planned_l6_activities WHERE archived_at IS NULL ORDER BY l6_id"
+                """
+                SELECT l6_id, description, discipline, asset, location,
+                       to_char(planned_start, 'YYYY-MM-DD')  AS planned_start,
+                       to_char(planned_finish, 'YYYY-MM-DD') AS planned_finish
+                FROM activities
+                WHERE archived_at IS NULL
+                ORDER BY l6_id COLLATE "C"
+                """
             ).fetchall()
         ]
     finally:
@@ -212,7 +223,7 @@ def seed_synthetic_history(seed: int = 42, fraction: float = 0.65) -> dict[str, 
             "matched_activity_id": row["l6_id"],
             "match_method": "SEMANTIC_HYBRID+LLM (synthetic seed)",
             "confidence": match_confidence,
-            "reason": "Synthetic seed generated for the Institutional Memory demo, not a real field report.",
+            "reason": "Synthetic sample data for Institutional Memory, not a real field report.",
             "review_status": match_status,
         }
 
@@ -236,16 +247,16 @@ def seed_synthetic_history(seed: int = 42, fraction: float = 0.65) -> dict[str, 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed synthetic history for the Institutional Memory demo.")
-    parser.add_argument("--reset", action="store_true", help="Wipe existing progress_updates/execution state first.")
+    parser = argparse.ArgumentParser(description="Seed synthetic sample history for Institutional Memory.")
+    parser.add_argument("--reset", action="store_true", help="Wipe existing report history and reset every activity to NOT_STARTED first.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--fraction", type=float, default=0.65, help="Fraction of L6 activities to seed history for.")
     args = parser.parse_args()
 
     initialize_database()  # schema + schedule sync, once, before anything is seeded
     if args.reset:
-        reset_demo_data()
-        print("Reset: progress_updates cleared, planned_l6_activities execution fields reset.")
+        reset_history()
+        print("Reset: report history cleared, every activity back to NOT_STARTED / 0%.")
 
     result = seed_synthetic_history(seed=args.seed, fraction=args.fraction)
     print("Seeded synthetic institutional-memory history:", result)

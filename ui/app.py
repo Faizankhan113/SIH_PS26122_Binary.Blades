@@ -145,43 +145,6 @@ def forbidden(_exc):
 UPLOAD_DIR = ROOT / "data" / "ui_uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-DEMO_SCHEDULE = [
-    {
-        "activity_id": "L6-101",
-        "level": "L6",
-        "description": "Erect Line 24-XX",
-        "discipline": "Piping",
-        "asset": "Line 24",
-        "location": "Area A",
-        "planned_start": "2026-08-28",
-        "planned_finish": "2026-08-30",
-        "status": "PLANNED",
-    },
-    {
-        "activity_id": "L6-102",
-        "level": "L6",
-        "description": "Erect Line 25-XX",
-        "discipline": "Piping",
-        "asset": "Line 25",
-        "location": "Area A",
-        "planned_start": "2026-08-29",
-        "planned_finish": "2026-08-31",
-        "status": "PLANNED",
-    },
-    {
-        "activity_id": "L6-103",
-        "level": "L6",
-        "description": "Install Valve 24-A",
-        "discipline": "Piping",
-        "asset": "Valve 24-A",
-        "location": "Area B",
-        "planned_start": "2026-08-30",
-        "planned_finish": "2026-09-01",
-        "status": "PLANNED",
-    },
-]
-
-
 # Spreadsheet columns. Statement text: the first of these headers found.
 _STATEMENT_COLUMNS = ("statement", "description", "update", "progress")
 # A column holding a schedule identifier, in order of preference.
@@ -267,8 +230,8 @@ def _read_uploaded_file(path: Path) -> list[str]:
     raise ValueError(f"Unsupported file type: {suffix}")
 
 
-def _demo_extract(statement: str, report_date: str) -> dict[str, Any]:
-    """Small deterministic fallback used only when the real extraction module is unavailable."""
+def _keyword_fallback_extract(statement: str, report_date: str) -> dict[str, Any]:
+    """Keyword-rule fallback used only when LLM extraction fails. Its output is always flagged as degraded."""
     lower = statement.lower()
     event = {
         "event_id": f"EVT-{uuid.uuid4().hex[:8].upper()}",
@@ -399,7 +362,7 @@ def real_extract(statement: str, report_date: str, message_time: datetime | None
         return _needs_correction_payload(statement, exc)
     except Exception as exc:
         app.logger.exception("LLM extraction failed for statement, falling back to keyword heuristics")
-        event = _demo_extract(statement, report_date)
+        event = _keyword_fallback_extract(statement, report_date)
         # Distinct, visible error state -- the UI must show this was a
         # degraded keyword-rule guess, not trustworthy LLM extraction, so a
         # provider outage doesn't silently feed wrong data into matching.
@@ -410,13 +373,8 @@ def real_extract(statement: str, report_date: str, message_time: datetime | None
 
 
 class ScheduleUnavailableError(RuntimeError):
-    """Raised when the real schedule can't be loaded and demo mode wasn't
-    explicitly requested -- callers must surface this as an error state,
-    never silently substitute the 3-activity demo schedule for the real
-    70-activity plan."""
-
-
-DEMO_MODE = os.getenv("PS26122_DEMO_MODE", "").strip().lower() in {"1", "true", "yes"}
+    """Raised when the schedule can't be loaded from the database. Callers must
+    surface this as an error state and never match against a partial schedule."""
 
 
 def get_match_schedule() -> list[dict[str, Any]]:
@@ -428,14 +386,10 @@ def get_match_schedule() -> list[dict[str, Any]]:
         from src.database import list_active_schedule
         return list_active_schedule()
     except Exception as exc:
-        if DEMO_MODE:
-            app.logger.warning("DB unavailable (%s); PS26122_DEMO_MODE is on, using demo schedule.", exc)
-            return DEMO_SCHEDULE
         app.logger.exception("Schedule database unavailable")
         raise ScheduleUnavailableError(
-            "The real schedule could not be loaded from the database. Matching was not "
-            "run against a partial/demo schedule -- fix the database connection, or set "
-            "PS26122_DEMO_MODE=1 to explicitly allow the 3-activity demo fallback."
+            "The schedule could not be loaded from the database, so matching was not run. "
+            "Check the PostgreSQL connection (DATABASE_URL) and try again."
         ) from exc
 
 
@@ -600,7 +554,7 @@ def logout():
 
 
 # --------------------------------------------------------------------------
-# Supervisor: placeholder review UI
+# Supervisor: review queue
 # --------------------------------------------------------------------------
 
 @app.route("/review")
@@ -704,7 +658,7 @@ def api_reject_review(update_id: str):
 # --------------------------------------------------------------------------
 # Supervisor: planner list
 #
-# UNMATCHED statements are flagged here for a planner. Nothing on this page
+# UNMATCHED (NOT_FOUND) statements are flagged here for a planner. Nothing on this page
 # edits the schedule or the plan: "Mark as new activity" only records a note.
 # --------------------------------------------------------------------------
 
@@ -827,7 +781,9 @@ def api_ingest():
     user = current_user()
     reported_by = user["name"]
     reported_by_user_id = user["user_id"]
-    report_id = (request.form.get("report_id") or "").strip() or None
+    # Every statement of one submission must land in the same report row, so a
+    # report id always exists (typed by the contractor, or generated here).
+    report_id = (request.form.get("report_id") or "").strip() or f"RPT-{uuid.uuid4().hex[:10].upper()}"
     statements: list[str] = []
     source_name = "Pasted text"
 
@@ -986,10 +942,12 @@ def _build_match_row(
     Called only from `continue_to_match` and `retry_match`; opening or reloading
     /matched only reads the stored row and never saves.
 
-    * AUTO_ACCEPTED -> the plan is updated (unless the save downgrades it).
+    * AUTO_ACCEPTED -> the plan is updated (unless the save downgrades it, or the
+                       report is outdated / changes nothing: HISTORICAL / NO_CHANGE).
     * REVIEW        -> saved as pending, plan unchanged.
-    * UNMATCHED     -> saved as history only.
-    * ERROR         -> not saved at all.
+    * UNMATCHED     -> saved (as NOT_FOUND) for the planner list.
+    * ERROR         -> saved as ERROR for the audit trail; never queued anywhere.
+                       Retrying adds a new attempt to the same statement.
 
     `before_db` is read just before the save and `after_db` just after it, both
     from the database, so what the screen shows is what the database holds. The
@@ -1006,7 +964,7 @@ def _build_match_row(
     saved: dict[str, Any] | None = None
     save_error: str | None = None
     outcome = "ERROR"
-    if status in ("AUTO_ACCEPTED", "REVIEW", "UNMATCHED"):
+    if status in ("AUTO_ACCEPTED", "REVIEW", "UNMATCHED", "ERROR"):
         saved, save_error = _save_event(event, match, ingestion)
         if saved is None:
             outcome = "NOT_SAVED"
@@ -1019,7 +977,11 @@ def _build_match_row(
                 match["review_status"] = saved["match_status"]
                 match["reason"] = saved["match_reason"]
                 outcome = {"AUTO_ACCEPTED": "APPLIED", "REVIEW": "PENDING",
-                           "UNMATCHED": "LOGGED"}.get(saved["match_status"], "LOGGED")
+                           "UNMATCHED": "LOGGED", "ERROR": "ERROR"}.get(saved["match_status"], "LOGGED")
+                if saved["match_status"] == "AUTO_ACCEPTED" and not saved["applied"]:
+                    # Accepted, but the live state was not changed: an older report
+                    # than the one already applied, or one that agrees with it.
+                    outcome = "HISTORICAL" if saved.get("outcome") == "HISTORICAL_ONLY" else "NO_CHANGE"
                 if saved["conflicts"]:
                     outcome = "CONFLICT"
                     match["conflicts"] = saved["conflicts"]
@@ -1170,10 +1132,9 @@ def matched():
 def memory():
     """Institutional Memory: queryable historical execution patterns.
 
-    This page is READ-ONLY against progress_updates -- it never writes to
+    This page is READ-ONLY (it reads main_updates, matching_results and friends) -- it never writes to
     the database. Historical rows here come either from real approved
-    updates (future real-write mode) or, for this demo, from the separate
-    `python -m src.seed_history` step.
+    updates, or from the optional `python -m src.seed_history` sample-data step.
     """
     from src.institutional_memory import (
         delay_reason_breakdown,

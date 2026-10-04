@@ -1,12 +1,12 @@
-# PS 26122: Field Progress Intelligence (MVP)
+# PS 26122: Field Progress Intelligence
 
 **Smart India Hackathon 2026 | Problem Statement 26122**
 
 Turns fragmented, discipline-wise field progress reports into structured, schedule-linked execution data. A contractor types or uploads a plain-language site update, and the system extracts the facts, matches them to the correct planned activity (L6) in the project schedule, and updates the plan only when it is confident. Uncertain cases go to a human supervisor.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.13-blue)
 ![Flask](https://img.shields.io/badge/Flask-3.x-lightgrey)
-![SQLite](https://img.shields.io/badge/SQLite-local-green)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-local-green)
 ![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20Groq-orange)
 
 ---
@@ -14,7 +14,7 @@ Turns fragmented, discipline-wise field progress reports into structured, schedu
 ## Table of Contents
 
 1. [Problem Statement](#1-problem-statement)
-2. [What the MVP Does](#2-what-the-mvp-does)
+2. [What the System Does](#2-what-the-system-does)
 3. [System Architecture](#3-system-architecture)
 4. [Tech Stack](#4-tech-stack)
 5. [Project Structure](#5-project-structure)
@@ -50,7 +50,7 @@ There is no reliable, low-friction way to capture the actual start and end of L5
 - Auto-update actual start and end dates in the schedule / PMIS in near real time, with a confidence score and audit trail per entry.
 - Produce a clean, discipline-tagged actual-progress dataset that feeds (a) performance analytics, delay/risk pattern discovery and forecasting, and (b) institutional memory: a growing, queryable repository of real execution patterns (actual durations, recurring delay causes, discipline-wise productivity).
 
-A working prototype ingesting two to three varied input formats, with extraction and schedule linking, is the target. Full production-grade OCR / ASR is not required. Live project data is not shared, so this repository uses **synthetic** data of similar structure.
+The system ingests several input formats, extracts structured progress, and links it to the schedule. OCR and ASR are listed as planned extensions (section 11). Live project data is not shared, so this repository ships **synthetic** sample data of similar structure.
 
 ### Example
 
@@ -63,12 +63,12 @@ contractor: ABC Piping | matched activity: L6-xxx | confidence: 0.91 | AUTO_ACCE
 
 ---
 
-## 2. What the MVP Does
+## 2. What the System Does
 
 - **Structured extraction:** an LLM converts a free-text statement into a validated `ExtractedProgress` object (activity, asset, discipline, location, status, dates, progress %, contractor, delay reason, explicit activity IDs, and a supporting evidence quote).
 - **Deterministic normalization and validation:** dates, times and delay-reason categories are handled in Python and Pydantic, not by the LLM. A time of day is never invented.
 - **Two-stage L5/L6 matching:** hybrid retrieval builds a shortlist, then an LLM reranks only that shortlist.
-- **Confidence calibration:** every match ends as `AUTO_ACCEPTED`, `REVIEW`, `UNMATCHED` or `ERROR`, with a full candidate audit trail.
+- **Confidence calibration:** every match ends as `AUTO_ACCEPTED`, `REVIEW`, `UNMATCHED` or `ERROR`, with a full candidate audit trail. (`UNMATCHED` is the matcher's word; the database stores it as `NOT_FOUND`, and a matcher crash is stored as `ERROR`, never as `NOT_FOUND`.)
 - **Safe writes:** the plan only changes for auto-accepted matches or supervisor-approved reviews. Anything that would lower progress or rewrite a finish date is sent to review instead.
 - **Role-based web app:** contractors submit reports, and supervisors approve accounts, review uncertain matches and triage possible new activities.
 - **Institutional memory:** searchable history, discipline productivity and delay-cause breakdowns built from applied updates.
@@ -129,16 +129,22 @@ MatchResult + candidate audit trail → safe write to the database
 
 ### 3.3 Safe writes
 
-Whatever calls `save_progress_update()`, the plan changes only when:
+Every change to the live state (`main`) goes through a `supervisor_decisions` row, and `save_progress_update()` does the whole save in **one transaction**: report, statement, revision 1, matching result, decision, then `main_updates` and `main`. If any step fails, nothing is kept.
 
-- the match is `AUTO_ACCEPTED`, or
-- a supervisor approves a `REVIEW` match (`decide_review_update()`, at most once).
+The plan changes only when:
+
+- the match is `AUTO_ACCEPTED`: the system writes an `AUTO_ACCEPT` decision (no human user), or
+- a supervisor approves a `REVIEW` match (`decide_review_update()`): an `APPROVE` decision, at most once.
 
 Other rules:
 
-- `REVIEW` and `UNMATCHED` results are stored as history only. A `REVIEW` row keeps its candidate in `pending_l6_id` and receives `l6_id` only once it is really applied.
+- `REVIEW`, `NOT_FOUND` and `ERROR` results are stored as history only and never change `main`. A `REVIEW` result keeps its candidate in `matching_results.matched_activity_id`, and `main` changes only when a supervisor approves it.
+- Dismissing a planner item or marking it as a new activity is stored as a `DISMISS` / `MARK_NEW_ACTIVITY` decision. It never touches `main` or `activities`.
 - An automatic update that would lower progress, change an existing finish date, or move a `COMPLETED` activity backwards is not applied. It is stored as `REVIEW` with the reason.
+- An update from degraded extraction is never auto-applied, and approving it needs an extra confirmation.
+- **Newest report wins.** An update from an older report than the one that last set the activity is kept as `HISTORICAL_ONLY`, and one that changes nothing is kept as `NO_CHANGE`.
 - The same statement (report date + reporter + text) is stored only once.
+- Applying a decision is exactly-once: `main_updates.decision_id` is unique and the `main` row is locked (`FOR UPDATE`) while it changes.
 - Institutional-memory statistics count only applied updates.
 
 ### 3.4 Reliability
@@ -153,10 +159,10 @@ Other rules:
 
 | Layer | Technology |
 |---|---|
-| Language | Python 3.10+ |
+| Language | Python 3.13 |
 | Web app | Flask 3, Jinja2 templates, vanilla JS and CSS |
 | Data validation | Pydantic v2 |
-| Database | SQLite (local, generated on bootstrap) |
+| Database | PostgreSQL (local server), psycopg 3 |
 | LLM providers | Google Gemini (`google-genai`), Groq (via `openai` client) |
 | Retrieval | scikit-learn (TF-IDF), spaCy `en_core_web_md`, RapidFuzz |
 | File ingestion | openpyxl (Excel), csv, optional PyMuPDF (PDF) |
@@ -173,17 +179,20 @@ SIH_PS26122_Binary.Blades/
 │   ├── examples.txt            # sample contractor statements
 │   ├── labelled_cases.json     # labelled cases for threshold calibration
 │   └── retrieval_cases.json    # retrieval-only test cases
+├── db/
+│   └── schema.sql              # the PostgreSQL schema (eight-table design)
 ├── prompts/                    # LLM prompt templates (extraction, matching)
 ├── src/
 │   ├── extract.py              # statement → ExtractedProgress → ProgressEvent
 │   ├── normalize.py            # deterministic normalization and validation
 │   ├── semantic_match.py       # hybrid retrieval + rerank + confidence rules
 │   ├── providers.py            # Gemini / Groq providers, timeouts, retries
-│   ├── database.py             # schema, migrations, safe-write logic
+│   ├── db.py                   # connection, schema install, `python -m src.db` tools
+│   ├── database.py             # schedule sync, safe-write logic, review and planner decisions
 │   ├── auth.py                 # roles, password hashing, account approval
 │   ├── pipeline_runs.py        # server-side storage for in-progress report runs
 │   ├── institutional_memory.py # read-only queries over execution history
-│   ├── seed_history.py         # synthetic history for the demo
+│   ├── seed_history.py         # synthetic sample history
 │   ├── calibrate.py            # threshold calibration report
 │   ├── retrieval_eval.py       # retrieval quality report
 │   ├── bootstrap.py            # one-command setup
@@ -204,7 +213,8 @@ SIH_PS26122_Binary.Blades/
 
 ### Prerequisites
 
-- Python 3.10 or newer
+- Python 3.13
+- PostgreSQL, running locally (a local install, or the Docker one-liner below)
 - A Gemini or Groq API key
 
 ### Installation
@@ -222,11 +232,8 @@ pip install -r requirements.txt -r requirements_ui.txt
 **Install the spaCy model.** `en_core_web_md` is not on PyPI, so install it from its release wheel.
 
 ```bash
-# Python 3.13 (matches spacy 3.8)
+# matches spacy 3.8 on Python 3.13
 pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl"
-
-# Python 3.10 to 3.12 (3.7.1 also works)
-pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.7.1/en_core_web_md-3.7.1-py3-none-any.whl"
 ```
 
 **Optional, for PDF uploads:**
@@ -234,6 +241,23 @@ pip install "https://github.com/explosion/spacy-models/releases/download/en_core
 ```bash
 pip install pymupdf
 ```
+
+### Set up PostgreSQL
+
+Create an empty database and a user that owns it. With a local install, in `psql` as the `postgres` user:
+
+```sql
+CREATE USER ps26122_user WITH PASSWORD 'your_password';
+CREATE DATABASE ps26122 OWNER ps26122_user;
+```
+
+Or run a throwaway server in Docker instead:
+
+```bash
+docker run --name ps26122-pg -e POSTGRES_USER=ps26122_user -e POSTGRES_PASSWORD=your_password -e POSTGRES_DB=ps26122 -p 5432:5432 -d postgres
+```
+
+Nothing else is needed: the app creates all tables itself. No extensions are used (pgvector comes later, see the roadmap).
 
 ### Configure
 
@@ -246,17 +270,22 @@ Edit `.env`:
 ```env
 LLM_PROVIDER=gemini          # gemini | groq
 GEMINI_API_KEY=your_key_here
+DATABASE_URL=postgresql://ps26122_user:your_password@localhost:5432/ps26122
 FLASK_SECRET_KEY=<run: python -c "import secrets; print(secrets.token_hex(32))">
 ```
 
 ### Run
 
 ```bash
-python -m src.bootstrap      # creates DB, loads schedule, creates demo users, seeds history
-python -m ui.app             # open http://127.0.0.1:5000
+python -m src.bootstrap             # creates the tables and loads the 81 activities
+python -m src.seed_users            # local accounts (see below)
+python -m src.seed_history --reset  # optional: synthetic sample history for Institutional Memory
+python -m ui.app                    # open http://127.0.0.1:5000
 ```
 
-Bootstrap is safe to re-run. Useful flags: `--fresh` (delete and rebuild the database) and `--no-history` (skip synthetic history).
+Bootstrap is safe to re-run. `python -m src.bootstrap --fresh` drops every PS 26122 table and rebuilds it (all data is synthetic, so nothing needs migrating). `python -m src.db status` shows the connection, schema version and tables.
+
+If the password in `DATABASE_URL` contains special characters (`@ : / # %`), percent-encode them, for example `@` becomes `%40`.
 
 ### Sample accounts
 
@@ -294,41 +323,23 @@ The login cookie holds only the user and a `run_id`. Statements, extraction resu
 
 ## 8. Database Architecture
 
-This section has two parts: the schema the MVP **runs on today** (8.1), and the **target design** for the final version (8.2).
+The app runs on PostgreSQL. `db/schema.sql` is applied by `python -m src.bootstrap` (and by `initialize_database()` at app start) and is safe to re-run. The schema separates source material, AI output, human decisions and live state into eight tables, plus two scratch tables and a version row.
 
-### 8.1 MVP schema (implemented)
-
-The MVP uses **SQLite** (`data/ps26122.db`, generated locally and git-ignored). Schema creation and in-place migrations run automatically at startup via `initialize_database()`, and existing databases upgrade without losing rows.
+### 8.1 Schema (implemented)
 
 | Table | Role |
 |---|---|
-| `planned_l6_activities` | The plan. Planned fields come from `data/schedule.json`. Execution state (actual dates, progress, status) is written only by applied updates. |
-| `progress_updates` | Append-only audit log of every processed statement: raw text, extracted fields, match confidence, method and reason, alternative candidates, reporter, approver, and planner decisions on unmatched items. |
 | `users` | Two roles, `contractor` and `supervisor`. Passwords are hashed. Contractor sign-ups stay `pending` until a supervisor approves them. |
-| `pipeline_runs` / `pipeline_run_items` | Scratch data for one in-progress report and its per-statement extraction state. Cleaned up automatically. |
-
-Key decisions:
-
-- **Plan and history are separate.** Past rows in `progress_updates` are never rewritten, so every decision stays auditable.
-- **A pending match never touches the plan.** A `REVIEW` row keeps its candidate in `pending_l6_id`, and `l6_id` is set only when the update is really applied.
-- **Idempotent ingestion.** A unique index on `fingerprint` (report date + reporter + normalised text, excluding `REJECTED` rows) stores each statement once, and a rejected statement can still be corrected and resubmitted.
-- **Archive, never delete.** An activity removed from `schedule.json` gets `archived_at` set, because history refers to it.
-- **Honest timestamps.** A time of day is stored only when the report stated one (`*_time_stated` flags). All timestamps are timezone-aware ISO strings (default `Asia/Kolkata`).
-
-### 8.2 Target design (final version)
-
-The final version separates source material, AI output, human decisions and live state into eight tables. This is a **working design (v0.1)**, and it is not implemented in the MVP code yet. It is a logical design, so it carries over to the PostgreSQL migration on the roadmap.
-
-| Table | Role |
-|---|---|
-| `activities` | Authoritative, admin-maintained L6 activity master, including planned dates. |
+| `activities` | Authoritative L6 activity master, planned fields only (from `data/schedule.json`), including planned dates. |
 | `reports` | One row per submitted report: source type, file location, **report datetime**, submitter, processing status. |
-| `report_statements` | One row per AI-extracted statement, with extraction provider, model, prompt version and status. |
-| `statement_revisions` | Contractor-corrected versions of a statement. Matching always references the exact revision it used. |
-| `matching_results` | One row per matching attempt: the AI's **top three candidates with scores**, original AI classification, confidence and reasoning, plus a summary of the supervisor's final verdict for accuracy evaluation. |
-| `supervisor_decisions` | Append-only audit of every supervisor decision and edit. This is the only source that can authorize a live-data change. |
-| `Main` | **Live state**, one row per activity: actual start and finish, cumulative progress (0 to 100), status, and pointers to the report, statement and decision that last set it. |
-| `main_updates` | Append-only audit of each approved update: previous, reported and new values, and whether it was `APPLIED`, `HISTORICAL_ONLY` or `NO_CHANGE`. |
+| `report_statements` | One row per extracted statement, with extraction provider, model, prompt version, degraded flag and status. |
+| `statement_revisions` | The extracted fields of a statement. Revision 1 is the extraction output; contractor and supervisor edits add later revisions (schema support only, there is no edit screen yet). Matching always references the exact revision it used. |
+| `matching_results` | One row per matching attempt: the AI's **top three candidates with scores**, original AI classification (`AUTO_ACCEPTED`, `REVIEW`, `NOT_FOUND`, `ERROR`), confidence and reasoning, plus a summary of the final verdict for accuracy evaluation. |
+| `supervisor_decisions` | Append-only audit of every decision: `AUTO_ACCEPT` (system, no user), `APPROVE`, `REJECT`, `DISMISS`, `MARK_NEW_ACTIVITY`, `EDIT`. This is the only source that can authorize a live-data change. |
+| `main` | **Live state**, one row per activity (created when the schedule is synced): actual start and finish, cumulative progress (0 to 100), status, and pointers to the report, statement and decision that last set it. |
+| `main_updates` | Append-only audit of each decision applied to `main`: previous, reported and new values for start, finish, progress and status, and whether it was `APPLIED`, `HISTORICAL_ONLY` or `NO_CHANGE`. |
+| `pipeline_runs` / `pipeline_run_items` | Scratch data for one in-progress report and its per-statement extraction state. Cleaned up automatically. |
+| `schema_version` | One row, used for plain SQL upgrades (no Alembic). |
 
 ```mermaid
 erDiagram
@@ -351,36 +362,27 @@ erDiagram
     SUPERVISOR_DECISIONS ||--o| MAIN_UPDATES : authorizes
 ```
 
-The existing users table is reused (reports, revisions and decisions reference it), so no second user table is created.
-
 **Data flow**
 
-1. A report is submitted (`reports`) and the AI extracts its statements (`report_statements`).
-2. The contractor corrects a statement, which is saved as a revision (`statement_revisions`).
-3. The matcher runs on that exact revision and stores its top three candidates and classification (`matching_results`).
-4. The supervisor reviews and the decision is recorded (`supervisor_decisions`).
-5. If the report is the newest for that activity, `main_updates` is inserted and `Main` is changed **in one transaction**. Otherwise it is kept as `HISTORICAL_ONLY`.
+1. A report is submitted (`reports`) and the AI extracts its statements (`report_statements`), each with revision 1 (`statement_revisions`).
+2. The matcher runs on that exact revision and stores its top three candidates and classification (`matching_results`).
+3. A decision is recorded (`supervisor_decisions`): a confident match gets a system `AUTO_ACCEPT`, an uncertain one waits for a supervisor's `APPROVE` or `REJECT`.
+4. If the report is the newest for that activity, `main_updates` is inserted and `main` is changed **in one transaction**. Otherwise it is kept as `HISTORICAL_ONLY`.
 
 **Key rules**
 
-- **Only supervisor-approved results can change `Main`.** Rejected and unresolved decisions never do.
-- **Newest report wins, not newest approval.** `Main` follows the latest `report_datetime`, and the later approval time breaks ties. An older report approved out of order is kept in `main_updates` but does not overwrite `Main`.
-- **Progress is cumulative (0 to 100).** It may decrease only with explicit supervisor approval, and an approved report with an unchanged percentage is still recorded.
-- **AI output is never overwritten.** The original classification, candidates and scores stay separate from the supervisor's verdict, which makes AI accuracy measurable.
-- **Errors are not "not found".** A matcher execution error is kept distinct from a valid `NOT_FOUND` result.
-- **Idempotent and auditable.** `main_updates.decision_id` is unique so a decision cannot be applied twice, audit tables are append-only, and audited rows are never cascade-deleted.
-- **Fixed vs live data.** Planned fields live only in `activities`, and only live values live in `Main` and `main_updates`.
+- **Only a decision can change `main`.** Rejected, dismissed and unresolved results never do. Planner actions (`DISMISS`, `MARK_NEW_ACTIVITY`) never change `main` or `activities`.
+- **Newest report wins, not newest approval.** `main` follows the latest `report_datetime`, and the later approval time breaks ties. A report with no time is dated at local midnight (`Asia/Kolkata` by default). An older report approved out of order is kept in `main_updates` but does not overwrite `main`.
+- **Progress is cumulative (0 to 100).** A drop, or a different finish date, goes to review instead of being applied. An approved report with an unchanged percentage is still recorded as `NO_CHANGE`.
+- **AI output is never overwritten.** The original classification, candidates and scores stay separate from the final verdict, which makes AI accuracy measurable.
+- **Errors are not "not found".** A matcher execution error is stored as `ERROR`, distinct from a valid `NOT_FOUND` result.
+- **Idempotent and auditable.** `main_updates.decision_id` is unique so a decision cannot be applied twice, audit tables are append-only (enforced by triggers), and audited rows are never cascade-deleted.
+- **Idempotent ingestion.** A partial unique index on `fingerprint` (report date + reporter + normalised text, excluding `REJECTED` statements) stores each statement once, and a rejected statement can be corrected and resubmitted.
+- **Fixed vs live data.** Planned fields live only in `activities`, and only live values live in `main` and `main_updates`.
+- **Archive, never delete.** An activity removed from `schedule.json` gets `archived_at` set, because history refers to it.
+- **Honest timestamps.** A time of day is kept only when the report stated one (`actual_*_time_stated` flags); date-only values are stored as local midnight. All timestamps are `timestamptz`.
 
-**How the MVP maps to the target (approximate)**
-
-| MVP | Target |
-|---|---|
-| `planned_l6_activities` (planned columns) | `activities` |
-| `planned_l6_activities` (actual dates, progress, status) | `Main` |
-| `progress_updates` | Split into `report_statements`, `matching_results`, `supervisor_decisions` and `main_updates` |
-| `UNMATCHED` | `NOT_FOUND` |
-
-Still open in the working design: whether to keep every contractor save as a revision, whether supervisor edits also create a revision, whether `main_updates` stores changed fields only or full snapshots, and when `Main` rows are created. Multi-project support (`projects`) and schedule versioning are deliberately left out for now.
+Multi-project support (`projects`), schedule versioning and `pgvector` are deliberately left out for now.
 
 ---
 
@@ -395,7 +397,7 @@ All settings are environment variables, documented in `.env.example`.
 | `GROQ_API_KEY` / `GROQ_MODEL` | none / `openai/gpt-oss-20b` | Groq settings |
 | `FLASK_SECRET_KEY` | random per start | Signs the login cookie. Set it so sessions survive restarts. |
 | `FLASK_DEBUG` | off | Set to `1` for auto-reload and the debugger |
-| `PS26122_DB_PATH` | `data/ps26122.db` | Use a different SQLite file |
+| `DATABASE_URL` | none (required) | PostgreSQL connection string, e.g. `postgresql://user:password@localhost:5432/ps26122` |
 | `PS26122_TIMEZONE` | `Asia/Kolkata` | IANA timezone for stored timestamps |
 | `PS26122_DEFAULT_PROJECT_ID` | `GPC-001` | Used only for schedule rows with no `project_id` |
 | `PS26122_EXTRACT_WORKERS` | `4` | Statements extracted in parallel |
@@ -405,9 +407,9 @@ All settings are environment variables, documented in `.env.example`.
 
 ### Editing the schedule
 
-`data/schedule.json` is the source of truth for planned activities. It is synced to the database once at app start (and by `python -m src.bootstrap`), so **restart after editing it**.
+`data/schedule.json` is the source of truth for planned activities. It is synced to the `activities` table (and a `main` row is created for each new activity) once at app start and by `python -m src.bootstrap`, so **restart after editing it**.
 
-- Changed planned fields are updated, and execution state is kept.
+- Changed planned fields are updated, and live state in `main` is kept.
 - Removed activities are archived, not deleted.
 - If `planned_duration` is missing, it is computed counting both the start and finish day (15 Jun to 24 Jun = 10 days).
 
@@ -419,7 +421,7 @@ The bundled schedule has **81 realistic L6 activities** across seven execution a
 
 ## 10. Evaluation Tools
 
-Both scripts run against the same matching code as the app.
+The script run against the same matching code as the app.
 
 ```bash
 # How do the confidence thresholds behave? (auto-accept precision, review rate, etc.)
@@ -432,6 +434,7 @@ python -m src.retrieval_eval --json
 python -m src.retrieval_eval --show-all
 ```
 
+
 Labelled cases live in `data/labelled_cases.json` (clear, ambiguous and unmatched cases) and `data/retrieval_cases.json` (explicit-ID, thin-field and noisy-sentence cases).
 
 ---
@@ -440,7 +443,7 @@ Labelled cases live in `data/labelled_cases.json` (clear, ambiguous and unmatche
 
 ### 11.1 Coverage of the problem statement
 
-| Expected outcome | Status in this MVP | Planned |
+| Expected outcome | Status | Planned |
 |---|---|---|
 | Ingest free-text reports and discipline spreadsheets | **Built** (`.txt`, `.log`, `.csv`, `.xlsx`) | Discipline-specific templates |
 | Ingest PDF reports | **Built** (text PDFs, optional PyMuPDF) | Scanned PDFs via OCR |
@@ -448,8 +451,8 @@ Labelled cases live in `data/labelled_cases.json` (clear, ambiguous and unmatche
 | Ingest Primavera / MS Project exports | Not built (schedule is loaded from `schedule.json`) | Schedule import ([11.2](#112-planned-features-and-tools)) |
 | Conversational / voice "time agent" | Not built | Voice agent ([11.2](#112-planned-features-and-tools)) |
 | Fuzzy match to L5/L6, flag unmatched for planner | **Built** (hybrid retrieval, rerank, planner list) | Stronger retrieval and granularity handling |
-| Confidence score and audit trail per entry | **Built** | Richer audit schema (section 8.2) |
-| Auto-update actuals in the schedule / PMIS | **Built** for the app database | Write-back to Primavera / MS Project |
+| Confidence score and audit trail per entry | **Built** (eight-table schema, append-only decisions) | Contractor and supervisor edit screens |
+| Auto-update actuals in the schedule / PMIS | **Built** | Write-back to Primavera / MS Project |
 | Structured, discipline-tagged dataset | **Built** | Multi-project dataset on PostgreSQL |
 | Analytics, delay/risk discovery, forecasting | Basic (Institutional Memory view) | Technical dashboard |
 | Institutional memory | **Built** (search, productivity, delay causes) | Cross-project learning |
@@ -461,7 +464,7 @@ Labelled cases live in `data/labelled_cases.json` (clear, ambiguous and unmatche
 Site supervisors speak an update in their own language, and an LLM agent turns it into the same structured event the text pipeline already produces. If a field is missing (which activity, start or finish, percent complete), the agent asks a short follow-up instead of presenting a form.
 
 - Speech-to-text: **Indian-language ASR (AI4Bharat IndicWhisper / Sarvam)**
-- Conversation and structuring: **LLM with tool-calling** through the existing provider layer (Gemini / Groq), emitting the current `ExtractedProgress` schema
+- Conversation and structuring: **LLM with tool-calling** through the existing provider layer (Gemini / Groq), emitting the current `ExtractedProgress` schema with a Rag layer to keep the contex and the facts correct
 - Output feeds the existing normalization, matching and supervisor-review pipeline unchanged
 
 **Scanned site diaries (OCR)**
@@ -497,19 +500,18 @@ A separate analytics app over the database:
 - Discipline-wise productivity and duration variance
 - Matching quality: auto-accept rate, supervisor override rate, unmatched trend
 - Delay/risk pattern discovery and forecasting (**scikit-learn / statsmodels**)
-- Stack: **Streamlit + Plotly**, reading from PostgreSQL
+- Stack: **Dash + Plotly**, reading from PostgreSQL
 
 **Data layer**
 
-- Migrate from SQLite to **PostgreSQL with pgvector** for multi-user, multi-project deployment
-- Adopt the **eight-table target schema** ([section 8.2](#82-target-design-final-version)): per-statement revisions, top-three candidate storage, and an append-only decision and update audit
+- Add **pgvector** to the existing PostgreSQL database for semantic search and embeddings
 - Multi-project support and a cross-project institutional memory: benchmark durations, delay causes and productivity from past projects, with semantic search over history via pgvector
 
 ### 11.3 Planned technology additions
 
 | Area | Planned tools |
 |---|---|
-| Speech-to-text | AI4Bharat IndicWhisper / Sarvam |
+| Speech-to-text | AI4Bharat IndicWhisper / Sarvam + RAG |
 | Conversational agent | LLM tool-calling (Gemini / Groq) |
 | OCR | Tesseract / PaddleOCR |
 | Schedule import | xerparser / PyP6Xer (Primavera), MPXJ (MS Project) |

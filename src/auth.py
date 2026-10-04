@@ -1,30 +1,30 @@
 """Role-based authentication: users table, password hashing, login/signup logic.
 
-Two roles, matching the two "_by" columns on `progress_updates` that exist
-in the schema but previously had no real identity behind them:
+Two roles. Each is the identity behind a "who did this" column in the
+audit tables (`reports.submitted_by_user_id`,
+`supervisor_decisions.decided_by_user_id`):
 
-  - contractor  -- submits field-progress reports (`reported_by`).
+  - contractor  -- submits field-progress reports.
     Self-signup, but the account sits in `status='pending'` until a
-    supervisor approves it (see `approve_contractor_account`).
-  - supervisor  -- reviews/approves REVIEW-status matches (`approved_by`).
-    Not self-signup; seeded directly (see `src/seed_users.py`).
+    supervisor approves it (see `set_account_status`).
+  - supervisor  -- reviews/approves REVIEW-status matches and decides planner
+    items. Not self-signup; seeded directly (see `src/seed_users.py`).
 
-This module owns everything about *who* a user is. `src/database.py` owns
-the progress-tracking schema and gained a `users` table plus a few new FK
-columns on `progress_updates` (see `initialize_database()` there) so this
-module can stay a thin layer over the same SQLite connection.
+This module owns everything about *who* a user is: the `users` table
+(defined in db/schema.sql) and nothing else. User dicts keep the same keys as
+before, with `created_at` as ISO text in project-local time.
 """
 
 from __future__ import annotations
 
-import sqlite3
 import uuid
 from typing import Any
 
+from psycopg import errors as pg_errors
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .database import get_connection
-from .timeutil import now_iso
+from .timeutil import to_local_iso
 
 VALID_ROLES = {"contractor", "supervisor"}
 STATUS_PENDING = "pending"
@@ -36,8 +36,15 @@ class UsernameTakenError(ValueError):
     """Raised on signup when the username is already in use."""
 
 
-def _now() -> str:
-    return now_iso()
+# The unique constraint PostgreSQL names for `username text NOT NULL UNIQUE` on `users`.
+_USERNAME_CONSTRAINT = "users_username_key"
+
+
+def _user_dict(row: dict[str, Any]) -> dict[str, Any]:
+    """A users row as a plain dict (created_at as project-local ISO text)."""
+    user = dict(row)
+    user["created_at"] = to_local_iso(user.get("created_at"))
+    return user
 
 
 def create_user(
@@ -56,20 +63,27 @@ def create_user(
         raise ValueError("Password must be at least 8 characters.")
 
     user_id = f"USR-{uuid.uuid4().hex[:8].upper()}"
-    now = _now()
     conn = get_connection()
     try:
-        conn.execute(
+        row = conn.execute(
             """
-            INSERT INTO users (user_id, name, username, password_hash, role, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (user_id, name, username, password_hash, role, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING created_at
             """,
-            (user_id, name, username, generate_password_hash(password), role, status, now),
-        )
+            (user_id, name, username, generate_password_hash(password), role, status),
+        ).fetchone()
         conn.commit()
-    except sqlite3.IntegrityError as exc:
+    except pg_errors.UniqueViolation as exc:
         conn.rollback()
+        # Only the username constraint means "taken"; anything else is a real error.
+        constraint = exc.diag.constraint_name
+        if constraint and constraint != _USERNAME_CONSTRAINT:
+            raise
         raise UsernameTakenError(f"Username '{username}' is already taken.") from exc
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
     return {
@@ -78,7 +92,7 @@ def create_user(
         "username": username,
         "role": role,
         "status": status,
-        "created_at": now,
+        "created_at": to_local_iso(row["created_at"]),
     }
 
 
@@ -93,9 +107,9 @@ def get_user_by_username(username: str) -> dict[str, Any] | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM users WHERE username = ?", ((username or "").strip().lower(),)
+            "SELECT * FROM users WHERE username = %s", ((username or "").strip().lower(),)
         ).fetchone()
-        return dict(row) if row else None
+        return _user_dict(row) if row else None
     finally:
         conn.close()
 
@@ -105,8 +119,8 @@ def get_user_by_id(user_id: str | None) -> dict[str, Any] | None:
         return None
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        return dict(row) if row else None
+        row = conn.execute("SELECT * FROM users WHERE user_id = %s", (user_id,)).fetchone()
+        return _user_dict(row) if row else None
     finally:
         conn.close()
 
@@ -129,10 +143,10 @@ def list_pending_contractor_accounts() -> list[dict[str, Any]]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM users WHERE role = 'contractor' AND status = ? ORDER BY created_at",
+            "SELECT * FROM users WHERE role = 'contractor' AND status = %s ORDER BY created_at, user_id",
             (STATUS_PENDING,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_user_dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -142,7 +156,10 @@ def set_account_status(user_id: str, status: str) -> None:
         raise ValueError(f"Invalid status: {status!r}")
     conn = get_connection()
     try:
-        conn.execute("UPDATE users SET status = ? WHERE user_id = ?", (status, user_id))
+        conn.execute("UPDATE users SET status = %s WHERE user_id = %s", (status, user_id))
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
